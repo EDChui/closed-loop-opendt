@@ -79,6 +79,7 @@ clean-volumes:
 		docker compose down -v 2>/dev/null || true; \
 	fi
 	@docker volume rm opendt-kafka-data 2>/dev/null || true
+	@docker volume rm opendt-postgres-data 2>/dev/null || true
 	@docker volume rm opendt-grafana-storage 2>/dev/null || true
 
 # =============================================================================
@@ -149,6 +150,18 @@ clean-env:
 # Logging Commands
 # =============================================================================
 
+## logs-kafka: Tail logs for kafka service
+logs-kafka:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f kafka
+
+## logs-kafka-init: Tail logs for kafka-init service
+logs-kafka-init:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f kafka-init
+
+## logs-postgres: Tail logs for postgres service
+logs-postgres:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f postgres
+
 ## logs-api: Tail logs for api service
 logs-api:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f api
@@ -156,6 +169,10 @@ logs-api:
 ## logs-dc-mock: Tail logs for dc-mock service
 logs-dc-mock:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f dc-mock
+
+## logs-k8s-trace-bridge: Tail logs for k8s-trace-bridge service
+logs-k8s-trace-bridge:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f k8s-trace-bridge
 
 ## logs-simulator: Tail logs for simulator service
 logs-simulator:
@@ -165,9 +182,25 @@ logs-simulator:
 logs-calibrator:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose --profile calibration logs -f calibrator
 
+## logs-grafana: Tail logs for grafana service
+logs-grafana:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f grafana
+
 # =============================================================================
 # Shell Commands
 # =============================================================================
+
+## shell-kafka: Open a shell in the kafka container
+shell-kafka:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec kafka /bin/bash
+
+## shell-kafka-init: Open a shell in the kafka-init container
+shell-kafka-init:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec kafka-init /bin/bash
+
+## shell-postgres: Open a shell in the postgres container
+shell-postgres:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec postgres /bin/bash
 
 ## shell-api: Open a shell in the api container
 shell-api:
@@ -177,6 +210,10 @@ shell-api:
 shell-dc-mock:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec dc-mock /bin/bash
 
+## shell-k8s-trace-bridge: Open a shell in the k8s-trace-bridge container
+shell-k8s-trace-bridge:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec k8s-trace-bridge /bin/bash
+
 ## shell-simulator: Open a shell in the simulator container
 shell-simulator:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec simulator /bin/bash
@@ -184,6 +221,10 @@ shell-simulator:
 ## shell-calibrator: Open a shell in the calibrator container
 shell-calibrator:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose --profile calibration exec calibrator /bin/bash
+
+## shell-grafana: Open a shell in the grafana container
+shell-grafana:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec grafana /bin/sh
 
 # =============================================================================
 # Help

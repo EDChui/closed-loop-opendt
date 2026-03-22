@@ -77,6 +77,26 @@ services:
       - opendt-network
     restart: "no"
 
+  postgres:
+    image: postgres:16
+    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-postgres
+    environment:
+      POSTGRES_DB: opendt
+      POSTGRES_USER: opendt
+      POSTGRES_PASSWORD: opendt
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opendt -d opendt"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - opendt-network
+
   # ============================================================================
   # PYTHON MICROSERVICES
   # ============================================================================
@@ -106,6 +126,39 @@ services:
     networks:
       - opendt-network
     command: python -m dc_mock.main
+
+  k8s-trace-bridge:
+    build:
+      context: .
+      dockerfile: services/k8s-trace-bridge/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-k8s-trace-bridge
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      CONFIG_FILE: /app/config.yaml
+      PYTHONUNBUFFERED: 1
+      KUBECONFIG: /kube/config
+      PROMETHEUS_URL: http://host.docker.internal:9091
+      DATABASE_URL: postgresql+psycopg://opendt:opendt@postgres:5432/opendt
+      K8S_NAMESPACE: exp
+    volumes:
+      # Mount source code for hot reload
+      - ./services/k8s-trace-bridge:/app/services/k8s-trace-bridge
+      - ./libs/common:/app/libs/common
+      # Mount configuration file
+      - ${CONFIG_PATH:-./config/default.yaml}:/app/config.yaml:ro
+      # Kubeconfig for accessing Kubernetes API
+      - ${HOME}/.kube:/kube:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    networks:
+      - opendt-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: sh -c "python -m k8s_trace_bridge.init_db && python -m k8s_trace_bridge.main"
 
   simulator:
     build:
@@ -239,5 +292,7 @@ networks:
 volumes:
   kafka_data:
     name: opendt-kafka-data
+  postgres_data:
+    name: opendt-postgres-data
   grafana-storage:
     name: opendt-grafana-storage

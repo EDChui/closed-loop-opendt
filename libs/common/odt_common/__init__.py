@@ -11,6 +11,7 @@ from odt_common.config import (
     ServicesConfig,
     SimulatorConfig,
     WorkloadContext,
+    K8sWorkloadContext,
     load_config_from_env,
 )
 from odt_common.models import Consumption, Fragment, Task, Topology, TopologySnapshot
@@ -30,6 +31,7 @@ __all__ = [
     "SimulatorConfig",
     "CalibratorConfig",
     "WorkloadContext",
+    "K8sWorkloadContext",
     "DynamicConfigEvent",
     "load_config_from_env",
     "ResultCache",
