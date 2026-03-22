@@ -36,11 +36,13 @@ up: clean-volumes
 	fi
 	@$(PYTHON) scripts/opendt_cli.py init --config $(config)
 	@RUN_ID=$$(cat .run_id) && \
+	HOST_UID=$$(id -u) && HOST_GID=$$(id -g) && \
 	if [ ! -f "data/$$RUN_ID/.env" ]; then \
 		echo "Error: data/$$RUN_ID/.env not found after initialization"; \
 		exit 1; \
 	fi && \
 	set -a && . ./data/$$RUN_ID/.env && set +a && \
+	export HOST_UID HOST_GID && \
 	if [ "$(build)" = "true" ]; then \
 		echo "Rebuilding Docker images..."; \
 		docker compose $$PROFILE_FLAG build --no-cache; \

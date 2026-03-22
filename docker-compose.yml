@@ -62,6 +62,7 @@ services:
       context: .
       dockerfile: services/kafka-init/Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME:-opendt}-kafka-init
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       CONFIG_FILE: /app/config/simulation.yaml
       PYTHONUNBUFFERED: 1
@@ -85,6 +86,7 @@ services:
       context: .
       dockerfile: services/dc-mock/Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME:-opendt}-dc-mock
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       WORKLOAD_DIR: /app/workload
@@ -110,6 +112,7 @@ services:
       context: .
       dockerfile: services/simulator/Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME:-opendt}-simulator
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CONFIG_FILE: /app/config.yaml
@@ -141,6 +144,7 @@ services:
       context: .
       dockerfile: services/calibrator/Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME:-opendt}-calibrator
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CONFIG_FILE: /app/config.yaml
@@ -173,6 +177,7 @@ services:
       context: .
       dockerfile: services/api/Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME:-opendt}-api
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CONFIG_FILE: /app/config/simulation.yaml
