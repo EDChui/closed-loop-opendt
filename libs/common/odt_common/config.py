@@ -49,10 +49,10 @@ class GlobalConfig(BaseModel):
         return v
 
 
-class DcMockConfig(BaseModel):
-    """DC-Mock service configuration."""
+class K8sTraceBridgeConfig(BaseModel):
+    """K8s-Trace-Bridge service configuration."""
 
-    workload: str = Field(..., description="Workload name (e.g., 'SURF')")
+    namespace: str = Field(default="default", description="Kubernetes namespace to monitor")
     heartbeat_frequency_minutes: int = Field(
         default=1,
         description="Frequency in simulation minutes for workload heartbeat messages",
@@ -116,7 +116,7 @@ class CalibratorConfig(BaseModel):
 class ServicesConfig(BaseModel):
     """Configuration for all services."""
 
-    dc_mock: DcMockConfig = Field(alias="dc-mock")
+    k8s_trace_bridge: K8sTraceBridgeConfig = Field(alias="k8s-trace-bridge")
     simulator: SimulatorConfig
     calibrator: CalibratorConfig | None = Field(
         None, description="Calibrator config (only required if calibration_enabled=true)"
@@ -124,106 +124,6 @@ class ServicesConfig(BaseModel):
 
     class Config:
         populate_by_name = True
-
-
-class WorkloadMetadata(BaseModel):
-    """Workload-specific metadata and configuration."""
-
-    name: str = Field(..., description="Workload name")
-    description: str | None = Field(default=None, description="Workload description")
-    consumption_offset_ms: int = Field(
-        default=0, description="Offset in ms to add to consumption timestamps"
-    )
-
-    @classmethod
-    def load(cls, path: Path) -> "WorkloadMetadata":
-        """Load workload metadata from YAML file."""
-        if not path.exists():
-            # Return default if file doesn't exist
-            return cls(name=path.parent.name)
-
-        with open(path) as f:
-            data = yaml.safe_load(f)
-
-        # Extract relevant fields
-        timestamps = data.get("timestamps", {})
-        return cls(
-            name=data.get("name", path.parent.name),
-            description=data.get("description"),
-            consumption_offset_ms=timestamps.get("consumption_offset_ms", 0),
-        )
-
-
-class WorkloadContext(BaseModel):
-    """Workload context with resolved file paths."""
-
-    name: str = Field(default="", description="Workload name (e.g., 'SURF')")
-    base_path: Path = Field(default=Path("/app/workload"), description="Base workload directory")
-    workload_dir: Path | None = Field(
-        None, description="Direct path to workload directory (overrides base_path/name)"
-    )
-    metadata: WorkloadMetadata | None = Field(None, description="Workload metadata")
-
-    def __init__(self, **data):
-        """Initialize and load metadata if not provided."""
-        super().__init__(**data)
-        if self.metadata is None and self.workload_config_file.exists():
-            self.metadata = WorkloadMetadata.load(self.workload_config_file)
-
-    @property
-    def _resolved_workload_dir(self) -> Path:
-        """Get resolved workload directory path."""
-        if self.workload_dir is not None:
-            return self.workload_dir
-        return self.base_path / self.name
-
-    @property
-    def tasks_file(self) -> Path:
-        """Path to tasks.parquet file."""
-        return self._resolved_workload_dir / "tasks.parquet"
-
-    @property
-    def fragments_file(self) -> Path:
-        """Path to fragments.parquet file."""
-        return self._resolved_workload_dir / "fragments.parquet"
-
-    @property
-    def consumption_file(self) -> Path:
-        """Path to consumption.parquet file."""
-        return self._resolved_workload_dir / "consumption.parquet"
-
-    @property
-    def topology_file(self) -> Path:
-        """Path to topology.json file."""
-        return self._resolved_workload_dir / "topology.json"
-
-    @property
-    def workload_config_file(self) -> Path:
-        """Path to workload configuration file."""
-        return self._resolved_workload_dir / "workload.yaml"
-
-    @property
-    def consumption_offset_ms(self) -> int:
-        """Get consumption timestamp offset in milliseconds."""
-        if self.metadata:
-            return self.metadata.consumption_offset_ms
-        return 0
-
-    def exists(self) -> bool:
-        """Check if workload directory exists."""
-        return self._resolved_workload_dir.exists()
-
-    def get_file_status(self) -> dict[str, bool]:
-        """Check which workload files exist."""
-        return {
-            "tasks": self.tasks_file.exists(),
-            "fragments": self.fragments_file.exists(),
-            "consumption": self.consumption_file.exists(),
-            "topology": self.topology_file.exists(),
-        }
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
 class K8sWorkloadContext(BaseModel):
@@ -258,25 +158,9 @@ class AppConfig(BaseModel):
         return self
 
     @property
-    def workload(self) -> str:
-        """Get workload name from dc-mock config."""
-        return self.services.dc_mock.workload
-
-    @property
     def calibration_enabled(self) -> bool:
         """Check if calibration is enabled."""
         return self.global_config.calibration_enabled
-
-    def get_workload_context(self, base_path: Path) -> WorkloadContext:
-        """Get workload context with resolved paths.
-
-        Args:
-            base_path: Override the default base path (/app/data)
-
-        Returns:
-            WorkloadContext with resolved file paths
-        """
-        return WorkloadContext(name=self.workload, base_path=base_path)
 
     @classmethod
     def load(cls, path: str | Path) -> "AppConfig":

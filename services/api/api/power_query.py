@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from odt_common import WorkloadContext
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -30,8 +29,8 @@ class PowerDataResponse(BaseModel):
 
 class PowerDataQuery:
     """Query and align power data from simulation and actual consumption."""
-
-    def __init__(self, run_id: str, workload_context: WorkloadContext):
+    
+    def __init__(self, run_id: str, workload_context: Any):     # TODO: Remove workload_context
         """Initialize power data query.
 
         Args:

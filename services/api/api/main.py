@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     # Load configuration
     try:
         app.state.config = load_config_from_env()
-        logger.info(f"Configuration loaded for workload: {app.state.config.workload}")
+        logger.info("Configuration loaded")
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")
         app.state.config = None
@@ -261,16 +261,10 @@ async def get_power_data(
         raise HTTPException(status_code=500, detail="Configuration not loaded")
 
     try:
-        # Get workload directory (mounted directly to specific workload)
-        workload_dir = Path(os.getenv("WORKLOAD_DIR", "/app/workload"))
-
-        # Create workload context directly with mounted workload directory
-        from odt_common.config import WorkloadContext
-
-        workload_context = WorkloadContext(workload_dir=workload_dir)
+        # FIXME: Remove workload_context from PowerDataQuery
 
         # Initialize query
-        query = PowerDataQuery(run_id=run_id, workload_context=workload_context)
+        query = PowerDataQuery(run_id=run_id, workload_context=None)
 
         # Execute query
         result = query.query(interval_seconds=interval_seconds, start_time=start_time)

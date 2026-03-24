@@ -101,32 +101,6 @@ services:
   # PYTHON MICROSERVICES
   # ============================================================================
 
-  dc-mock:
-    build:
-      context: .
-      dockerfile: services/dc-mock/Dockerfile
-    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-dc-mock
-    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      WORKLOAD_DIR: /app/workload
-      CONFIG_FILE: /app/config.yaml
-      PYTHONUNBUFFERED: 1
-    volumes:
-      # Mount source code for hot reload
-      - ./services/dc-mock:/app/services/dc-mock
-      - ./libs/common:/app/libs/common
-      # Mount specific workload directory
-      - ${WORKLOAD_PATH:-./workload/SURF}:/app/workload:ro
-      # Mount configuration file
-      - ${CONFIG_PATH:-./config/default.yaml}:/app/config.yaml:ro
-    depends_on:
-      kafka-init:
-        condition: service_completed_successfully
-    networks:
-      - opendt-network
-    command: python -m dc_mock.main
-
   k8s-trace-bridge:
     build:
       context: .
@@ -140,7 +114,6 @@ services:
       KUBECONFIG: /kube/config
       PROMETHEUS_URL: http://host.docker.internal:9091
       DATABASE_URL: postgresql+psycopg://opendt:opendt@postgres:5432/opendt
-      K8S_NAMESPACE: exp
     volumes:
       # Mount source code for hot reload
       - ./services/k8s-trace-bridge:/app/services/k8s-trace-bridge
