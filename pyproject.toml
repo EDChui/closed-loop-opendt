@@ -23,6 +23,9 @@ dependencies = [
     "rich>=13.0.0",
     "inquirerpy>=0.3.4",
     "ipykernel>=7.1.0",
+    "kubernetes>=35.0.0",
+    "sqlalchemy>=2.0.48",
+    "psycopg[binary]>=3.3.3",
 ]
 
 [project.optional-dependencies]

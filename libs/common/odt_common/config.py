@@ -7,7 +7,7 @@ This module provides:
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -224,6 +224,16 @@ class WorkloadContext(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
+
+
+class K8sWorkloadContext(BaseModel):
+    """Kubernetes-specific workload context"""
+
+    kubeconfig_path: str = Field(default="/kube/config", description="Path to kubeconfig file")
+    namespace: str = Field(default="default", description="Kubernetes namespace to monitor")
+    resource_type: Literal["pod", "job"] = Field(default="pod", description="Kubernetes resource type to monitor (pod, job)")
+    prometheus_url: str = Field(default="http://host.docker.internal:9090", description="URL for Prometheus server to query resource metrics")
+    database_url: str = Field(default="postgresql+psycopg://opendt:opendt@postgres:5432/opendt", description="Database connection URL for storing workload metadata")
 
 
 class AppConfig(BaseModel):
