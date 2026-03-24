@@ -496,7 +496,7 @@ def main():
     # Load configuration from environment
     try:
         config = load_config_from_env()
-        logger.info(f"Loaded configuration for workload: {config.workload}")
+        logger.info("Loaded configuration")
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")
         raise

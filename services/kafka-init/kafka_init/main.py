@@ -115,7 +115,7 @@ def main() -> int:
         # Load configuration from environment
         logger.info("Loading configuration...")
         config = load_config_from_env()
-        logger.info(f"Configuration loaded for workload: {config.workload}")
+        logger.info("Configuration loaded")
 
         # Extract Kafka configuration
         kafka_config = config.kafka

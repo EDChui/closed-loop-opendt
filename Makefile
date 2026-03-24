@@ -166,10 +166,6 @@ logs-postgres:
 logs-api:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f api
 
-## logs-dc-mock: Tail logs for dc-mock service
-logs-dc-mock:
-	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f dc-mock
-
 ## logs-k8s-trace-bridge: Tail logs for k8s-trace-bridge service
 logs-k8s-trace-bridge:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f k8s-trace-bridge
@@ -205,10 +201,6 @@ shell-postgres:
 ## shell-api: Open a shell in the api container
 shell-api:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec api /bin/bash
-
-## shell-dc-mock: Open a shell in the dc-mock container
-shell-dc-mock:
-	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec dc-mock /bin/bash
 
 ## shell-k8s-trace-bridge: Open a shell in the k8s-trace-bridge container
 shell-k8s-trace-bridge:

@@ -39,7 +39,6 @@ dev = [
 ]
 
 # Service-specific dependencies (optional, if some services have unique needs)
-dc-mock = []  # Currently uses only shared dependencies
 simulator = []  # Currently uses only shared dependencies
 api = [
     "httpx>=0.25.0",  # For API client usage

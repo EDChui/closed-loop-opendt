@@ -76,6 +76,7 @@ def discover_runs() -> list[dict[str, Any]]:
         try:
             with open(config_path) as f:
                 config = yaml.safe_load(f)
+            # TODO: dc-mock is removed, change this
             workload = config.get("services", {}).get("dc-mock", {}).get("workload", "Unknown")
             run_info["workload"] = workload
             # Read calibration_enabled (defaults to False if not present)

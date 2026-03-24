@@ -154,7 +154,8 @@ class K8sTraceBridgeOrchestrator:
             # Load configuration
             logger.info("Loading configuration...")
             config = load_config_from_env()
-            namespace = os.getenv("K8S_NAMESPACE", "default")
+            namespace = config.services.k8s_trace_bridge.namespace
+            heartbeat_frequency_minutes = config.services.k8s_trace_bridge.heartbeat_frequency_minutes
             kubeconfig_path = os.getenv("KUBECONFIG", "/kube/config")
             prometheus_url = os.getenv("PROMETHEUS_URL", "http://host.docker.internal:9090")
             database_url = os.getenv("DATABASE_URL", "postgresql+psycopg://opendt:opendt@postgres:5432/opendt")
@@ -189,7 +190,7 @@ class K8sTraceBridgeOrchestrator:
                 topology_topic=topology_topic,
                 workload_topic=workload_topic,
                 power_topic=power_topic,
-                heartbeat_frequency_minutes=1,
+                heartbeat_frequency_minutes=heartbeat_frequency_minutes,
             )
 
             # Wait for completion
