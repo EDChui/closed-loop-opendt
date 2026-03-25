@@ -8,6 +8,7 @@ services:
   k8s-trace-bridge:
     namespace: "exp"
     heartbeat_frequency_minutes: 1
+    cpu_frequency_mhz: 2400
 
   simulator:
     simulation_frequency_minutes: 5
