@@ -117,36 +117,63 @@ class PodEventExtractor(EventObjectExtractor):
         return self.get_terminal_status(event_obj) == "Succeeded"
     
     def get_start_finish_dt(self, event_obj: Any) -> tuple[Optional[datetime], Optional[datetime]]:
-        starts, finishes = [], []
-
         status = getattr(event_obj, "status", None)
+        if status is None:
+            return None, None
+        
+        # Old method: Use pod's status.start_time
+        # Now use container statuses for more accurate start/finish times
+        # start_dt = getattr(status, "start_time", None)
 
-        pod_start_time = getattr(status, "start_time", None)
-        if pod_start_time is not None:
-            starts.append(pod_start_time)
+        start_dt = None
+        finish_dt = None
 
-        container_statuses = getattr(status, "container_statuses", None) or []
-        for cs in container_statuses:
-            state = getattr(cs, "state", None)
-            if state is None:
-                continue
+        started_ats, finished_ats = [], []
 
-            terminated = getattr(state, "terminated", None)
-            running = getattr(state, "running", None)
+        # Check the pods' container statuses for more accurate start/finish times
+        status_groups = [
+            # getattr(status, "init_container_statuses", None) or [],
+            getattr(status, "container_statuses", None) or [],
+            # getattr(status, "ephemeral_container_statuses", None) or []
+        ]
 
-            terminated_started_at = getattr(terminated, "started_at", None)
-            running_started_at = getattr(running, "started_at", None)
-            if terminated_started_at is not None:
-                starts.append(terminated_started_at)
-            if running_started_at is not None:
-                starts.append(running_started_at)
+        for container_statuses in status_groups:
+            for cs in container_statuses:
+                for state_attr in ("state", "last_state"):
+                    state = getattr(cs, state_attr, None)
+                    if state is None:
+                        continue
 
-            terminated_finished_at = getattr(terminated, "finished_at", None)
-            if terminated_finished_at is not None:
-                finishes.append(terminated_finished_at)
+                    running = getattr(state, "running", None)
+                    terminated = getattr(state, "terminated", None)
 
-        start_dt = min(starts) if starts else None
-        finish_dt = max(finishes) if finishes else None
+                    if running is not None:
+                        running_started_at = getattr(running, "started_at", None)
+                        if running_started_at is not None:
+                            started_ats.append(running_started_at)
+                    
+                    if terminated is not None:
+                        terminated_started_at = getattr(terminated, "started_at", None)
+                        terminated_finished_at = getattr(terminated, "finished_at", None)
+                        if terminated_started_at is not None:
+                            started_ats.append(terminated_started_at)
+                        if terminated_finished_at is not None:
+                            finished_ats.append(terminated_finished_at)
+        
+        if start_dt is None and started_ats:
+            start_dt = min(started_ats)
+        if finish_dt is None and finished_ats:
+            finish_dt = max(finished_ats)
+
+        # Finish time fallback, check the pod conditions
+        if finish_dt is None and self.is_terminal(event_obj):
+            conditions = getattr(status, "conditions", None) or []
+            for c in conditions:
+                last_transition_time = getattr(c, "last_transition_time", None)
+                if last_transition_time is not None:
+                    finished_ats.append(last_transition_time)
+            if finished_ats:
+                finish_dt = max(finished_ats)
         return start_dt, finish_dt
     
     def get_template_spec_containers(self, event_obj: Any) -> list[Any]:
