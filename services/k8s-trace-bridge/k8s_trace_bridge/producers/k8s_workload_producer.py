@@ -19,7 +19,6 @@ from k8s_trace_bridge.infrastructure.persistence.sqlalchemy import WorkloadCompl
 logger = logging.getLogger(__name__)
 
 SECONDS_TO_MILLISECONDS = 1000
-CPU_FREQUENCY_MHZ = 2400 # Assume 2.4 GHz, TODO: Make this configurable or fetch from cluster info
 MAX_RETRIES = 20
 RETRY_DELAY_SECONDS = 2
 
@@ -34,6 +33,7 @@ class K8sWorkloadProducer(BaseProducer):
         kubeconfig_path: str,
         namespace: str,
         resource_type: Literal["pod", "job"],
+        cpu_frequency_mhz: int,
         database_url: str,
         start_barrier: threading.Barrier | None = None,
     ):
@@ -53,6 +53,7 @@ class K8sWorkloadProducer(BaseProducer):
         self.kubeconfig_path = kubeconfig_path
         self.namespace = namespace
         self.resource_type = resource_type
+        self.cpu_frequency_mhz = cpu_frequency_mhz
         self.database_url = database_url
 
         self.terminal_metadata_stream = TerminalMetadataStream(
@@ -90,7 +91,7 @@ class K8sWorkloadProducer(BaseProducer):
             last_capture_time = snapshot.capture_time
             utilization_rate = snapshot.cpu_usage / cpu_limit_count
             cpu_count = ceil(cpu_limit_count)
-            cpu_usage = utilization_rate * cpu_count * CPU_FREQUENCY_MHZ
+            cpu_usage = utilization_rate * cpu_count * self.cpu_frequency_mhz
             fragments.append(Fragment(
                 id=task_id,
                 duration=duration_ms,
@@ -102,7 +103,7 @@ class K8sWorkloadProducer(BaseProducer):
     def _convert_terminal_metadata_to_task(self, metadata: WorkloadCompletion, task_id: int, fragments: list[Fragment]) -> Task:
         duration_ms = ceil((metadata.finish_time - metadata.start_time).total_seconds() * SECONDS_TO_MILLISECONDS)
         cpu_count = ceil(metadata.cpu_limit_count)
-        cpu_capacity = cpu_count * CPU_FREQUENCY_MHZ
+        cpu_capacity = cpu_count * self.cpu_frequency_mhz
         return Task(
             id=task_id,
             submission_time=metadata.submission_time,

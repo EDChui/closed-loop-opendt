@@ -40,3 +40,11 @@ class ResourceUsageSnapshot:
     capture_time: datetime
     cpu_usage: float        # CPU usages in cores (e.g., 0.5 for 500m)
     mem_usage_mb: float     # Memory usage in MB
+
+
+@dataclass(frozen=True)
+class K8sNodeShape:
+    cpu_count: int
+    memory_size_bytes: int
+    architecture: Optional[str]
+    operating_system: Optional[str]

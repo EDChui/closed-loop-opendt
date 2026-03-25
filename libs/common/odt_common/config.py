@@ -58,6 +58,14 @@ class K8sTraceBridgeConfig(BaseModel):
         description="Frequency in simulation minutes for workload heartbeat messages",
         gt=0,
     )
+    topology_publish_interval_seconds: int = Field(
+        default=30,
+        description="Interval in real seconds for publishing topology updates",
+        gt=0,
+    )
+    cpu_frequency_mhz: int = Field(
+        default=2400, description="CPU frequency in MHz, assuming all nodes' cores have the same frequency", gt=0
+    )
 
 
 class SimulatorConfig(BaseModel):
