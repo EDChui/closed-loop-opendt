@@ -15,8 +15,8 @@ from odt_common.models.topology import (
     MseCPUPowerModel,
     PowerSource
 )
-from k8s_trace_bridge.models import K8sNodeShape
-from k8s_trace_bridge.infrastructure.kubernetes import NodeExtractor
+from k8s_observability.models import K8sNodeShape
+from k8s_observability.kubernetes import K8sNodeExtractor
 from k8s_trace_bridge.producers import BaseProducer
 
 logger = logging.getLogger(__name__)
@@ -60,10 +60,10 @@ class TopologyProducer(BaseProducer):
         grouped_shapes: dict[K8sNodeShape, int] = defaultdict(int)
 
         for node in nodes:
-            if not NodeExtractor.is_ready_worker_node(node):
+            if not K8sNodeExtractor.is_ready_worker_node(node):
                 continue
 
-            shape = NodeExtractor.extract_node_shape(node)
+            shape = K8sNodeExtractor.extract_node_shape(node)
             grouped_shapes[shape] += 1
 
         if not grouped_shapes:

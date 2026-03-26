@@ -2,8 +2,9 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional
 
+
 @dataclass(frozen=True)
-class WorkloadCompletion:
+class K8sTaskRecord:
     # Basic identifiers
     resource_type: str              # "job" or "pod"
     namespace: str
@@ -25,14 +26,14 @@ class WorkloadCompletion:
 
 
 @dataclass(frozen=True)
-class PodCompletion(WorkloadCompletion):
+class K8sPodRecord(K8sTaskRecord):
     node_name: str
     owner_kind: str
     owner_name: str
 
 
 @dataclass(frozen=True)
-class ResourceUsageSnapshot:
+class K8sResourceUsageSnapshot:
     resource_type: str
     namespace: str
     name: str
@@ -40,11 +41,3 @@ class ResourceUsageSnapshot:
     capture_time: datetime
     cpu_usage: float        # CPU usages in cores (e.g., 0.5 for 500m)
     mem_usage_mb: float     # Memory usage in MB
-
-
-@dataclass(frozen=True)
-class K8sNodeShape:
-    cpu_count: int
-    memory_size_bytes: int
-    architecture: Optional[str]
-    operating_system: Optional[str]

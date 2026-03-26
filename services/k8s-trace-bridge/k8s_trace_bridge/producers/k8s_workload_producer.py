@@ -10,11 +10,11 @@ from typing import Literal, Sequence
 from math import ceil
 
 from odt_common import Fragment, Task
-
-from k8s_trace_bridge.models import WorkloadCompletion, ResourceUsageSnapshot
+from k8s_observability.models import K8sTaskRecord, K8sResourceUsageSnapshot
+from k8s_observability.kubernetes import K8sResourceTerminalStream
+from k8s_observability.persistence import build_engine, build_session_factory, K8sTaskRecordRepository, K8sResourceUsageSnapshotRepository
 from k8s_trace_bridge.producers.base import BaseProducer
-from k8s_trace_bridge.infrastructure.kubernetes import TerminalMetadataStream
-from k8s_trace_bridge.infrastructure.persistence.sqlalchemy import WorkloadCompletionRepository, ResourceUsageSnapshotRepository, build_engine, build_session_factory
+
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ class K8sWorkloadProducer(BaseProducer):
         self.cpu_frequency_mhz = cpu_frequency_mhz
         self.database_url = database_url
 
-        self.terminal_metadata_stream = TerminalMetadataStream(
+        self.terminal_metadata_stream = K8sResourceTerminalStream(
             namespace=self.namespace,
             resource_type=self.resource_type,
             config_file=self.kubeconfig_path,
@@ -64,8 +64,8 @@ class K8sWorkloadProducer(BaseProducer):
         self.db_engine = build_engine(self.database_url)
         self.db_session_factory = build_session_factory(self.db_engine)
         self.db_session = self.db_session_factory()
-        self.workload_repo = WorkloadCompletionRepository(self.db_session)
-        self.usage_repo = ResourceUsageSnapshotRepository(self.db_session)
+        self.task_record_repo = K8sTaskRecordRepository(self.db_session)
+        self.resource_usage_repo = K8sResourceUsageSnapshotRepository(self.db_session)
 
     def _build_task_message(self, task: Task) -> dict[str, object]:
         return {
@@ -76,7 +76,7 @@ class K8sWorkloadProducer(BaseProducer):
     
     def _convert_usage_snapshots_to_fragments(
         self,
-        snapshots: Sequence[ResourceUsageSnapshot],
+        snapshots: Sequence[K8sResourceUsageSnapshot],
         task_id: int,
         start_time: datetime,
         finish_time: datetime,
@@ -100,7 +100,7 @@ class K8sWorkloadProducer(BaseProducer):
             ))
         return fragments
     
-    def _convert_terminal_metadata_to_task(self, metadata: WorkloadCompletion, task_id: int, fragments: list[Fragment]) -> Task:
+    def _convert_terminal_metadata_to_task(self, metadata: K8sTaskRecord, task_id: int, fragments: list[Fragment]) -> Task:
         duration_ms = ceil((metadata.finish_time - metadata.start_time).total_seconds() * SECONDS_TO_MILLISECONDS)
         cpu_count = ceil(metadata.cpu_limit_count)
         cpu_capacity = cpu_count * self.cpu_frequency_mhz
@@ -119,11 +119,11 @@ class K8sWorkloadProducer(BaseProducer):
             logger.info(f"Captured completed {self.resource_type} in namespace {self.namespace} - {terminal_metadata.uid} ({terminal_metadata.terminal_status})")
 
             # Store in the database
-            task_id = self.workload_repo.add(terminal_metadata)
-            self.workload_repo.commit()
+            task_id = self.task_record_repo.add(terminal_metadata)
+            self.task_record_repo.commit()
 
             # Fetch the corresponding resource usage snapshots from the database
-            usage_snapshots = self.usage_repo.list_by_uid(terminal_metadata.uid)
+            usage_snapshots = self.resource_usage_repo.list_by_uid(terminal_metadata.uid)
             logger.info(f"Fetched {len(usage_snapshots)} resource usage snapshots for {terminal_metadata.uid}")
 
             # Build Fragments

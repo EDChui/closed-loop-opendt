@@ -4,10 +4,10 @@ from abc import ABC, abstractmethod
 from dataclasses import replace
 from typing import Dict, List, Optional
 
-from k8s_trace_bridge.models import ResourceUsageSnapshot
-from k8s_trace_bridge.infrastructure.prometheus.client import PrometheusClient
-from k8s_trace_bridge.infrastructure.kubernetes import JobUidResolver
-from k8s_trace_bridge.utils import UnitUtils, TimeUtils
+from k8s_observability.models import K8sResourceUsageSnapshot
+from k8s_observability.kubernetes import K8sJobUidResolver
+from k8s_observability.utils import TimeUtils, UnitUtils
+from k8s_trace_bridge.prometheus.client import PrometheusClient
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class PrometheusResourceCollector(ABC):
         # Ref: https://oneuptime.com/blog/post/2025-12-17-prometheus-cpu-memory-kubernetes-pods/view
         raise NotImplementedError
 
-    def collect_metrics(self, eval_dt: datetime) -> List[ResourceUsageSnapshot]:
+    def collect_metrics(self, eval_dt: datetime) -> List[K8sResourceUsageSnapshot]:
         eval_ts = TimeUtils.to_epoch_seconds(eval_dt)
         cpu_result = self.prom.query_instant(self.cpu_query(), eval_ts)
         mem_result = self.prom.query_instant(self.memory_query(), eval_ts)
@@ -67,7 +67,7 @@ class PrometheusResourceCollector(ABC):
             cpu_usage_cores = float(values.get("cpu_usage_cores", 0.0))
             ram_usage_bytes = float(values.get("ram_usage_bytes", 0.0))
 
-            snapshot = ResourceUsageSnapshot(
+            snapshot = K8sResourceUsageSnapshot(
                 resource_type=self.resource_type,
                 namespace=self.namespace,
                 name=resource_id,
@@ -156,7 +156,7 @@ class JobResourceCollector(PrometheusResourceCollector):
             cpu_rate_window=cpu_rate_window,
             resource_name_regex=resource_name_regex,
         )
-        self.uid_resolver = JobUidResolver(config_file=kubeconfig_file)
+        self.uid_resolver = K8sJobUidResolver(config_file=kubeconfig_file)
 
     @property
     def resource_type(self) -> str:
@@ -207,7 +207,7 @@ class JobResourceCollector(PrometheusResourceCollector):
             ")"
         )
     
-    def collect_metrics(self, eval_dt: datetime) -> List[ResourceUsageSnapshot]:
+    def collect_metrics(self, eval_dt: datetime) -> List[K8sResourceUsageSnapshot]:
         job_uid_map = self.uid_resolver.get_namespaced_job_uids(self.namespace)
 
         raw_snapshots = super().collect_metrics(eval_dt)

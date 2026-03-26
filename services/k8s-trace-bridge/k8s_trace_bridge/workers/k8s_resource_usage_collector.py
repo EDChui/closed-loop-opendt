@@ -1,13 +1,14 @@
 import logging
 import threading
 from typing import Literal
-
 from requests.exceptions import RequestException
 
+from k8s_observability.persistence import build_engine, build_session_factory, K8sResourceUsageSnapshotRepository
+from k8s_observability.utils import TimeUtils
+
 from k8s_trace_bridge.workers.base import BaseWorker
-from k8s_trace_bridge.infrastructure.prometheus import PrometheusClient, PrometheusResourceCollector, PodResourceCollector, JobResourceCollector
-from k8s_trace_bridge.infrastructure.persistence.sqlalchemy import ResourceUsageSnapshotRepository, build_engine, build_session_factory
-from k8s_trace_bridge.utils import TimeUtils
+from k8s_trace_bridge.prometheus import PrometheusClient, PrometheusResourceCollector, PodResourceCollector, JobResourceCollector
+
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class K8sResourceUsageCollector(BaseWorker):
         self.db_engine = build_engine(self.database_url)
         self.db_session_factory = build_session_factory(self.db_engine)
         self.db_session = self.db_session_factory()
-        self.usage_repo = ResourceUsageSnapshotRepository(self.db_session)
+        self.resource_usage_repo = K8sResourceUsageSnapshotRepository(self.db_session)
     
     def _build_collector(self) -> PrometheusResourceCollector:
         if self.resource_type == "pod":
@@ -70,8 +71,8 @@ class K8sResourceUsageCollector(BaseWorker):
             logger.error(f"Unexpected error during metric collection: {e}")
             snapshots = []
         
-        self.usage_repo.add_many(snapshots)
-        self.usage_repo.commit()
+        self.resource_usage_repo.add_many(snapshots)
+        self.resource_usage_repo.commit()
 
     def run(self) -> None:
         logger.info("K8sResourceUsageCollector running")

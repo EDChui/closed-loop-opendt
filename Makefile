@@ -99,6 +99,7 @@ setup:
 	@echo "Installing dependencies..."
 	@uv pip install -e libs/common
 	@uv pip install -e "libs/common[test]"
+	@uv pip install -e libs/k8s-observability
 	@uv pip install -e ".[dev]"
 	@echo ""
 	@echo "Done. Activate with: source .venv/bin/activate"

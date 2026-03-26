@@ -23,9 +23,6 @@ dependencies = [
     "rich>=13.0.0",
     "inquirerpy>=0.3.4",
     "ipykernel>=7.1.0",
-    "kubernetes>=35.0.0",
-    "sqlalchemy>=2.0.48",
-    "psycopg[binary]>=3.3.3",
 ]
 
 [project.optional-dependencies]
@@ -90,7 +87,7 @@ addopts = "-v --tb=short"
 
 [tool.pyright]
 include = ["libs", "services"]
-extraPaths = ["libs/common"]
+extraPaths = ["libs/common", "libs/k8s-observability"]
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "basic"

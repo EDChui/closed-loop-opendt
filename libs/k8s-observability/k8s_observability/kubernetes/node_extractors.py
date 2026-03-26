@@ -1,10 +1,10 @@
 from typing import Any
 
-from k8s_trace_bridge.models import K8sNodeShape
-from k8s_trace_bridge.utils import UnitUtils
+from k8s_observability.models import K8sNodeShape
+from k8s_observability.utils import UnitUtils
 
 
-class NodeExtractor:
+class K8sNodeExtractor:
     @staticmethod
     def is_ready_worker_node(node: Any) -> bool:
         metadata = getattr(node, "metadata", None)
