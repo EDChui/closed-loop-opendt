@@ -155,7 +155,6 @@ class K8sWorkloadProducer(BaseProducer):
         try:
             while not self.should_stop() and retry_count < MAX_RETRIES:
                 try:
-                    retry_count = 0
                     self._process_stream()
                 except Exception as e:
                     logger.error(f"Stream error: {e}", exc_info=True)
