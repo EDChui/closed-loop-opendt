@@ -163,6 +163,10 @@ logs-kafka-init:
 logs-postgres:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f postgres
 
+## logs-postgres-init: Tail logs for postgres-init service
+logs-postgres-init:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f postgres-init
+
 ## logs-api: Tail logs for api service
 logs-api:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f api
@@ -198,6 +202,10 @@ shell-kafka-init:
 ## shell-postgres: Open a shell in the postgres container
 shell-postgres:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec postgres /bin/bash
+
+## shell-postgres-init: Open a shell in the postgres-init container
+shell-postgres-init:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec postgres-init /bin/bash
 
 ## shell-api: Open a shell in the api container
 shell-api:

@@ -53,6 +53,26 @@ services:
     networks:
       - opendt-network
 
+  postgres:
+    image: postgres:16
+    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-postgres
+    environment:
+      POSTGRES_DB: opendt
+      POSTGRES_USER: opendt
+      POSTGRES_PASSWORD: opendt
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opendt -d opendt"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - opendt-network
+
   # ============================================================================
   # INFRASTRUCTURE INITIALIZATION
   # ============================================================================
@@ -77,25 +97,25 @@ services:
       - opendt-network
     restart: "no"
 
-  postgres:
-    image: postgres:16
-    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-postgres
+  postgres-init:
+    build:
+      context: .
+      dockerfile: services/postgres-init/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-postgres-init
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
-      POSTGRES_DB: opendt
-      POSTGRES_USER: opendt
-      POSTGRES_PASSWORD: opendt
-    ports:
-      - "5433:5432"
+      DATABASE_URL: postgresql+psycopg://opendt:opendt@postgres:5432/opendt
+      PYTHONUNBUFFERED: 1
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U opendt -d opendt"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
+      - ./services/postgres-init:/app/services/postgres-init
+      - ./libs/common:/app/libs/common
+      - ./libs/k8s-observability:/app/libs/k8s-observability
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - opendt-network
+    restart: "no"
 
   # ============================================================================
   # PYTHON MICROSERVICES
@@ -118,6 +138,7 @@ services:
       # Mount source code for hot reload
       - ./services/k8s-trace-bridge:/app/services/k8s-trace-bridge
       - ./libs/common:/app/libs/common
+      - ./libs/k8s-observability:/app/libs/k8s-observability
       # Mount configuration file
       - ${CONFIG_PATH:-./config/default.yaml}:/app/config.yaml:ro
       # Kubeconfig for accessing Kubernetes API
@@ -125,13 +146,13 @@ services:
     depends_on:
       kafka-init:
         condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
     networks:
       - opendt-network
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: sh -c "python -m k8s_trace_bridge.init_db && python -m k8s_trace_bridge.main"
+    command: python -m k8s_trace_bridge.main
 
   simulator:
     build:
