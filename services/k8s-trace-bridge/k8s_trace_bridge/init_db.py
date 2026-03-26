@@ -1,9 +1,8 @@
 import os
 import time
 
-from k8s_trace_bridge.infrastructure.persistence.sqlalchemy.base import Base
-from k8s_trace_bridge.infrastructure.persistence.sqlalchemy.session import build_engine, test_connection
-from k8s_trace_bridge.infrastructure.persistence.sqlalchemy.models import * # noqa: F401
+from k8s_observability.persistence import Base, build_engine, test_connection
+from k8s_observability.persistence.sqlachemy.tables import * # noqa: F401
 
 
 def main() -> None:

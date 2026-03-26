@@ -2,6 +2,7 @@ import time
 from datetime import datetime, timezone
 from typing import Union
 
+
 class TimeUtils:
     @staticmethod
     def now() -> datetime:

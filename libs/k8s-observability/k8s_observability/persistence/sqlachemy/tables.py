@@ -1,14 +1,13 @@
 from datetime import datetime
 from typing import Optional
-
 from sqlalchemy import Boolean, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from k8s_trace_bridge.infrastructure.persistence.sqlalchemy.base import Base
+from k8s_observability.persistence import Base
 
 
-class WorkloadCompletionModel(Base):
-    __tablename__ = "workload_completions"
+class K8sTaskRecordRow(Base):
+    __tablename__ = "k8s_task_records"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
@@ -34,8 +33,8 @@ class WorkloadCompletionModel(Base):
     owner_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
 
-class ResourceUsageSnapshotModel(Base):
-    __tablename__ = "resource_usage_snapshots"
+class K8sResourceUsageSnapshotRow(Base):
+    __tablename__ = "k8s_resource_usage_snapshots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     uid: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)

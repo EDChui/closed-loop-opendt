@@ -1,9 +1,8 @@
 from typing import Dict
-
 from kubernetes import client, config
 
 
-class JobUidResolver:
+class K8sJobUidResolver:
     def __init__(self, config_file: str | None = None):
         config.load_kube_config(config_file=config_file)
         self.batch = client.BatchV1Api()

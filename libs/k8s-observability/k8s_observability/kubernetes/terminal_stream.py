@@ -2,12 +2,12 @@ import logging
 from typing import Optional, Literal
 from kubernetes import client, config, watch
 
-from k8s_trace_bridge.infrastructure.kubernetes import EventObjectExtractor, JobEventExtractor, PodEventExtractor
+from k8s_observability.kubernetes import K8sEventObjectExtractor, K8sJobEventExtractor, K8sPodEventExtractor
 
 logger = logging.getLogger(__name__)
 
 
-class TerminalMetadataStream:
+class K8sResourceTerminalStream:
     def __init__(
         self,
         namespace: str,
@@ -33,11 +33,11 @@ class TerminalMetadataStream:
         else:
             raise ValueError(f"Unsupported resource type: {self.resource_type}")
         
-    def _get_extractor(self) -> EventObjectExtractor:
+    def _get_extractor(self) -> K8sEventObjectExtractor:
         if self.resource_type == "pod":
-            return PodEventExtractor()
+            return K8sPodEventExtractor()
         elif self.resource_type == "job":
-            return JobEventExtractor()
+            return K8sJobEventExtractor()
         else:
             raise ValueError(f"Unsupported resource type: {self.resource_type}")
     

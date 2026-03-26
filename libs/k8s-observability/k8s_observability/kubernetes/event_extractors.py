@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
 from dataclasses import replace
-from typing import Any, Optional, Literal
 from datetime import datetime
+from typing import Any, Optional, Literal
 
-from k8s_trace_bridge.models import WorkloadCompletion, PodCompletion
-from k8s_trace_bridge.utils import TimeUtils, UnitUtils
+from k8s_observability.models import K8sTaskRecord, K8sPodRecord
+from k8s_observability.utils import UnitUtils
 
 
-class EventObjectExtractor(ABC):
+class K8sEventObjectExtractor(ABC):
     @property
     @abstractmethod
     def resource_type(self) -> str:
@@ -65,7 +65,7 @@ class EventObjectExtractor(ABC):
 
         return cpu_count, mem_capacity_mb
 
-    def extract_metadata(self, uid: str, event_obj: Any) -> WorkloadCompletion:
+    def extract_metadata(self, uid: str, event_obj: Any) -> K8sTaskRecord:
         # Time-related fields
         metadata = getattr(event_obj, "metadata", None)
         submission_dt = getattr(metadata, "creation_timestamp", None)
@@ -81,7 +81,7 @@ class EventObjectExtractor(ABC):
         cpu_request_count, mem_request_capacity_mb = self.extract_resource_requirements(event_obj, "requests")
         cpu_limit_count, mem_limit_capacity_mb = self.extract_resource_requirements(event_obj, "limits")
 
-        return WorkloadCompletion(
+        return K8sTaskRecord(
             resource_type=self.resource_type,
             namespace=getattr(metadata, "namespace", "default"),
             name=getattr(metadata, "name", "unknown"),
@@ -98,7 +98,7 @@ class EventObjectExtractor(ABC):
         )
 
 
-class PodEventExtractor(EventObjectExtractor):
+class K8sPodEventExtractor(K8sEventObjectExtractor):
     @property
     def resource_type(self) -> str:
         return "pod"
@@ -181,7 +181,7 @@ class PodEventExtractor(EventObjectExtractor):
         containers = getattr(spec, "containers", None) or []
         return containers
     
-    def extract_metadata(self, uid: str, event_obj: Any) -> PodCompletion:
+    def extract_metadata(self, uid: str, event_obj: Any) -> K8sPodRecord:
         base_metrics = super().extract_metadata(uid, event_obj)
         owner_kind, owner_name = self._get_owner_reference(event_obj)
         spec = getattr(event_obj, "spec", None)
@@ -192,7 +192,7 @@ class PodEventExtractor(EventObjectExtractor):
         if owner_name is None:
             owner_name = "Unknown"
 
-        return PodCompletion(
+        return K8sPodRecord(
             **base_metrics.__dict__,
             node_name=node_name,
             owner_kind=owner_kind,
@@ -209,7 +209,7 @@ class PodEventExtractor(EventObjectExtractor):
         return getattr(owner, "kind", None), getattr(owner, "name", None)
 
 
-class JobEventExtractor(EventObjectExtractor):
+class K8sJobEventExtractor(K8sEventObjectExtractor):
     @property
     def resource_type(self) -> str:
         return "job"
@@ -253,7 +253,7 @@ class JobEventExtractor(EventObjectExtractor):
         template_spec = getattr(template, "spec", None)
         return getattr(template_spec, "containers", None) or []
     
-    def extract_metadata(self, uid: str, event_obj: Any) -> WorkloadCompletion:
+    def extract_metadata(self, uid: str, event_obj: Any) -> K8sTaskRecord:
         base_metrics = super().extract_metadata(uid, event_obj)
         
         spec = getattr(event_obj, "spec", None)
