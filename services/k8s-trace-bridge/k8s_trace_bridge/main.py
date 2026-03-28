@@ -8,7 +8,7 @@ from pathlib import Path
 from odt_common import load_config_from_env
 from odt_common.utils import get_kafka_bootstrap_servers
 from odt_common.config import K8sWorkloadContext
-from k8s_trace_bridge.producers import HeartbeatProducer, K8sWorkloadProducer, TopologyProducer
+from k8s_trace_bridge.producers import HeartbeatProducer, K8sWorkloadProducer
 from k8s_trace_bridge.workers import BaseWorker, K8sResourceUsageCollector
 
 logging.basicConfig(
@@ -22,7 +22,6 @@ class K8sTraceBridgeOrchestrator:
     def __init__(self):
         """Initialize the orchestrator"""
         self.heartbeat_producer: HeartbeatProducer | None = None
-        self.topology_producer: TopologyProducer | None = None
         self.workload_producer: K8sWorkloadProducer | None = None
         self.resource_usage_collector: K8sResourceUsageCollector | None = None
         self.shutdown_requested = False
@@ -42,12 +41,10 @@ class K8sTraceBridgeOrchestrator:
         self,
         workload_context: K8sWorkloadContext,
         kafka_bootstrap_servers: str,
-        topology_topic: str,
         workload_topic: str,
-        power_topic: str,
+        power_topic: str,                           # TODO: Power topic
         cpu_frequency_mhz: int,
         heartbeat_frequency_minutes: int = 1,
-        topology_publish_interval_seconds: int = 30,
     ) -> None:
         """Start all workers.
         
@@ -58,12 +55,12 @@ class K8sTraceBridgeOrchestrator:
         
         # Create a synchronization barrier for workers
         # This ensure they all start at the same wall-clock time
-        num_workers = 4
+        num_workers = 3
         start_barrier = threading.Barrier(num_workers, timeout=30)
         logger.info(f"Created start barrier for {num_workers} workers")
 
         # 1. Start HeartbeatProducer
-        logger.info("[1/4] Initializing HeartbeatProducer...")
+        logger.info("[1/3] Initializing HeartbeatProducer...")
         self.heartbeat_producer = HeartbeatProducer(
             kafka_bootstrap_servers=kafka_bootstrap_servers,
             topic=workload_topic,
@@ -72,20 +69,8 @@ class K8sTraceBridgeOrchestrator:
         )
         self.heartbeat_producer.start()
 
-        # 2. Start TopologyProducer
-        logger.info("[2/4] Initializing TopologyProducer...")
-        self.topology_producer = TopologyProducer(
-            kafka_bootstrap_servers=kafka_bootstrap_servers,
-            topic=topology_topic,
-            kubeconfig_path=workload_context.kubeconfig_path,
-            cpu_frequency_mhz=cpu_frequency_mhz,
-            publish_interval_seconds=topology_publish_interval_seconds,
-            start_barrier=start_barrier,
-        )
-        self.topology_producer.start()
-
-        # 3. Start K8sWorkloadProducer
-        logger.info("[3/4] Initializing K8sWorkloadProducer...")
+        # 2. Start K8sWorkloadProducer
+        logger.info("[2/3] Initializing K8sWorkloadProducer...")
         self.workload_producer = K8sWorkloadProducer(
             kafka_bootstrap_servers=kafka_bootstrap_servers,
             topic=workload_topic,
@@ -98,8 +83,8 @@ class K8sTraceBridgeOrchestrator:
         )
         self.workload_producer.start()
 
-        # 4. Start K8sResourceUsageCollector
-        logger.info("[4/4] Initializing K8sResourceUsageCollector...")
+        # 3. Start K8sResourceUsageCollector
+        logger.info("[3/3] Initializing K8sResourceUsageCollector...")
         self.resource_usage_collector = K8sResourceUsageCollector(
             kubeconfig_path=workload_context.kubeconfig_path,
             namespace=workload_context.namespace,
@@ -125,11 +110,6 @@ class K8sTraceBridgeOrchestrator:
                     logger.info("Waiting for HeartbeatProducer to finish...")
                     self.heartbeat_producer._thread.join()
 
-            # Topology producer runs indefinitely, so we stop it explicitly
-            if self.topology_producer and self.topology_producer.is_running():
-                logger.info("Stopping TopologyProducer...")
-                self.topology_producer.stop()
-
             # Workload producer runs indefinitely, o we stop it explicitly
             if self.workload_producer and self.workload_producer.is_running():
                 logger.info("Stopping WorkloadProducer...")
@@ -151,7 +131,6 @@ class K8sTraceBridgeOrchestrator:
 
         workers: list[tuple[str, BaseWorker | None]] = [
             ("HeartbeatProducer", self.heartbeat_producer),
-            ("TopologyProducer", self.topology_producer),
             ("WorkloadProducer", self.workload_producer),
             ("ResourceUsageCollector", self.resource_usage_collector),
         ]
@@ -177,11 +156,10 @@ class K8sTraceBridgeOrchestrator:
             config = load_config_from_env()
             namespace = config.services.k8s_trace_bridge.namespace
             heartbeat_frequency_minutes = config.services.k8s_trace_bridge.heartbeat_frequency_minutes
-            topology_publish_interval_seconds = config.services.k8s_trace_bridge.topology_publish_interval_seconds
             kubeconfig_path = os.getenv("KUBECONFIG", "/kube/config")
             prometheus_url = os.getenv("PROMETHEUS_URL", "http://host.docker.internal:9090")
             database_url = os.getenv("DATABASE_URL", "postgresql+psycopg://opendt:opendt@postgres:5432/opendt")
-            cpu_frequency_mhz = config.services.k8s_trace_bridge.cpu_frequency_mhz
+            cpu_frequency_mhz = config.global_config.cpu_frequency_mhz
 
             # Create workload context
             # Always use "pod" resource type as it is the most fundamental unit in K8s
@@ -197,11 +175,10 @@ class K8sTraceBridgeOrchestrator:
             logger.info(f"Kafka bootstrap servers: {kafka_bootstrap_servers}")
 
             # Get topic names
-            topology_topic = config.kafka.topics["topology"].name
             workload_topic = config.kafka.topics["workload"].name
             power_topic = config.kafka.topics["power"].name
             logger.info(
-                f"Topics: topology={topology_topic}, workload={workload_topic}, power={power_topic}"
+                f"Topics: workload={workload_topic}, power={power_topic}"
             )
 
             # Setup signal handlers
@@ -211,12 +188,10 @@ class K8sTraceBridgeOrchestrator:
             self.start_all(
                 workload_context=workload_context,
                 kafka_bootstrap_servers=kafka_bootstrap_servers,
-                topology_topic=topology_topic,
                 workload_topic=workload_topic,
                 power_topic=power_topic,
                 cpu_frequency_mhz=cpu_frequency_mhz,
                 heartbeat_frequency_minutes=heartbeat_frequency_minutes,
-                topology_publish_interval_seconds=topology_publish_interval_seconds,
             )
 
             # Wait for completion

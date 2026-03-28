@@ -26,3 +26,7 @@ class TimeUtils:
             return int(dt.timestamp())
         else:
             raise ValueError("Input must be a datetime object or an integer representing epoch seconds")
+        
+    @staticmethod
+    def to_datetime(epoch_seconds: Union[int, float]) -> datetime:
+        return datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)

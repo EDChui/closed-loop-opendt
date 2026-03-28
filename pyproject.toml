@@ -36,6 +36,9 @@ dev = [
 ]
 
 # Service-specific dependencies (optional, if some services have unique needs)
+k8s-decision-maker = [
+   "aiokafka==0.13.0",
+]
 simulator = []  # Currently uses only shared dependencies
 api = [
     "httpx>=0.25.0",  # For API client usage

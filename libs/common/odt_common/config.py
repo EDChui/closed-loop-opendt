@@ -39,6 +39,9 @@ class GlobalConfig(BaseModel):
         default=10.0, description="Simulation speed: 1.0 = realtime, -1 = max speed, >1 = faster"
     )
     calibration_enabled: bool = Field(default=False, description="Enable power model calibration")
+    cpu_frequency_mhz: int = Field(
+        default=2400, description="CPU frequency in MHz, assuming all nodes' cores have the same frequency", gt=0
+    )
 
     @field_validator("speed_factor")
     @classmethod
@@ -58,13 +61,13 @@ class K8sTraceBridgeConfig(BaseModel):
         description="Frequency in simulation minutes for workload heartbeat messages",
         gt=0,
     )
-    topology_publish_interval_seconds: int = Field(
-        default=30,
-        description="Interval in real seconds for publishing topology updates",
-        gt=0,
-    )
-    cpu_frequency_mhz: int = Field(
-        default=2400, description="CPU frequency in MHz, assuming all nodes' cores have the same frequency", gt=0
+
+
+class K8sDecisionMakerConfig(BaseModel):
+    """K8s-Decision-Maker service configuration."""
+
+    refresh_interval_seconds: int = Field(
+        default=120, description="Interval in seconds to fetch real system status", gt=0
     )
 
 
@@ -125,6 +128,7 @@ class ServicesConfig(BaseModel):
     """Configuration for all services."""
 
     k8s_trace_bridge: K8sTraceBridgeConfig = Field(alias="k8s-trace-bridge")
+    k8s_decision_maker: K8sDecisionMakerConfig = Field(alias="k8s-decision-maker")
     simulator: SimulatorConfig
     calibrator: CalibratorConfig | None = Field(
         None, description="Calibrator config (only required if calibration_enabled=true)"
