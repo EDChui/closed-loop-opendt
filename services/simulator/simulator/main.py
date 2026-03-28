@@ -115,7 +115,7 @@ class SimulationService:
         self.result_cache = ResultCache()
 
         # Speed tracking - to monitor if we're keeping up with configured speed
-        self.first_simulation_wall_time: float | None = None
+        self.first_simulation_wall_time: datetime | None = None
         self.first_simulation_sim_time: datetime | None = None
 
         logger.info(f"Initialized SimulationService with run ID: {run_id}")
@@ -168,44 +168,16 @@ class SimulationService:
         )
 
         return reduced
-
-    def _run_simulation(self) -> None:
-        """Run OpenDC simulation with accumulated tasks.
-
-        Args:
-            heartbeat_time: Timestamp that triggered this simulation
-        """
-        if not self.opendc_runner:
-            logger.warning("OpenDC runner not available, skipping simulation")
-            return
-
-        if not self.simulated_topology:
-            logger.warning("No topology available, skipping simulation")
-            return
-
-        # Get all accumulated tasks
-        all_tasks = self.task_accumulator.get_all_tasks()
-
-        if not all_tasks:
-            logger.info("No tasks to simulate, skipping")
-            return
-
+    
+    def _log_simulation_overview(self, all_tasks: list, aligned_simulated_time: datetime) -> None:
         # Get task time range
         first_task_time = min(task.submission_time for task in all_tasks)
         latest_task_time = max(task.submission_time for task in all_tasks)
         task_span_minutes = (latest_task_time - first_task_time).total_seconds() / 60
 
-        # Calculate aligned simulation time
-        aligned_simulated_time = self.task_accumulator.get_next_simulation_time(
-            self.simulation_frequency
-        )
-        if aligned_simulated_time is None:
-            logger.error("Cannot calculate aligned simulation time")
-            return
-
         # Log detailed simulation overview
         logger.info("=" * 80)
-        logger.info(f"🔬 Simulation Run {self.run_number + 1}")
+        logger.info(f"🔬 Simulation Run {self.run_number}")
         logger.info("=" * 80)
         logger.info(
             f"📋 OpenDC Input Data:\n"
@@ -217,7 +189,7 @@ class SimulationService:
         )
 
         # Track speed and drift
-        if self.first_simulation_wall_time is None:
+        if self.first_simulation_wall_time is None or self.first_simulation_sim_time is None:
             # First simulation - establish baseline
             self.first_simulation_wall_time = datetime.now(UTC)
             self.first_simulation_sim_time = aligned_simulated_time
@@ -279,8 +251,40 @@ class SimulationService:
 
         logger.info("=" * 80)
 
+    def _run_simulation(self) -> None:
+        """Run OpenDC simulation with accumulated tasks.
+
+        Args:
+            heartbeat_time: Timestamp that triggered this simulation
+        """
+        if not self.opendc_runner:
+            logger.warning("OpenDC runner not available, skipping simulation")
+            return
+
+        if not self.simulated_topology:
+            logger.warning("No topology available, skipping simulation")
+            return
+
+        # Get all accumulated tasks
+        all_tasks = self.task_accumulator.get_all_tasks()
+
+        if not all_tasks:
+            logger.info("No tasks to simulate, skipping")
+            return
+
+        # Calculate aligned simulation time
+        aligned_simulated_time = self.task_accumulator.get_next_simulation_time(
+            self.simulation_frequency
+        )
+        if aligned_simulated_time is None:
+            logger.error("Cannot calculate aligned simulation time")
+            return
+
         # Increment run number
         self.run_number += 1
+
+        # Log simulation overview with speed tracking
+        self._log_simulation_overview(all_tasks, aligned_simulated_time)
 
         # Apply background load reduction to topology
         topology_to_use = self._reduce_topology_for_background_load(self.simulated_topology)
