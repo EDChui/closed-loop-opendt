@@ -2,7 +2,7 @@ import enum
 from dataclasses import dataclass, field
 from typing import Literal, Union
 
-from k8s_decision_maker.domain import SimulationBatchReport
+from odt_common.models import SimulationBatchReport
 
 
 @dataclass(frozen=True)

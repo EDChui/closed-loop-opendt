@@ -6,7 +6,7 @@ from typing import AsyncIterator, Optional
 
 from sqlalchemy import Enum
 
-from k8s_decision_maker.domain import SimulationBatch, SimulationBatchReport
+from odt_common.models import SimulationBatch, SimulationBatchReport
 from k8s_decision_maker.application.ports import SimulationGateway
 
 logger = logging.getLogger(__name__)
@@ -85,25 +85,13 @@ class KafkaSimulationGateway(SimulationGateway):
             except Exception as e:
                 logger.error(f"Failed to decode simulation batch report: {e}")
 
-    @staticmethod
-    def _json_default(obj):
-        if hasattr(obj, "model_dump"):
-            return obj.model_dump(mode="json")
-        if is_dataclass(obj):
-            return asdict(obj)      # type: ignore
-        if isinstance(obj, Enum):
-            return obj.value        # type: ignore
-        if hasattr(obj, "__dict__"):
-            return obj.__dict__
-        raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
-
     @classmethod
     def _encode_batch(cls, batch: SimulationBatch) -> bytes:
-        return json.dumps(batch, default=cls._json_default).encode("utf-8")
+        return json.dumps(batch.model_dump(mode="json")).encode("utf-8")
 
     @staticmethod
     def _decode_report(raw: Optional[bytes]) -> Optional[SimulationBatchReport]:
         if raw is None:
             return None
         data = json.loads(raw.decode("utf-8"))
-        return SimulationBatchReport(**data)
+        return SimulationBatchReport.model_validate(data)

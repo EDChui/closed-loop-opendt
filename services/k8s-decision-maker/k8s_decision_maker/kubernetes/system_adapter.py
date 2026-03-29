@@ -2,6 +2,7 @@ import logging
 from collections import defaultdict
 from kubernetes import client, config
 
+from odt_common.models import Decision
 from odt_common.models.topology import (
     Topology,
     Cluster,
@@ -13,7 +14,6 @@ from odt_common.models.topology import (
 )
 from k8s_observability.models import K8sNodeShape
 from k8s_observability.kubernetes import K8sNodeExtractor
-from k8s_decision_maker.domain import Decision
 from k8s_decision_maker.domain.kubernetes import K8sSystemSnapshot, K8sActionKind
 from k8s_decision_maker.application.ports import SystemPort
 

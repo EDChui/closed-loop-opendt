@@ -5,16 +5,18 @@ import time
 import uuid
 from typing import Optional
 
+from odt_common.models import (
+    SimulationBatch,
+    SimulationBatchReport,
+    EvaluatedProposal,
+)
 from k8s_decision_maker.application.config import DecisionOrchestratorConfig
 from k8s_decision_maker.application.events import Event, Priority, QueueItem, RefreshTick
 from k8s_decision_maker.application.ports import SystemPort, SimulationGateway, StatePublisher
 from k8s_decision_maker.domain import (
     DecisionPolicy,
-    EvaluatedProposal,
     ObservedState,
     ProposalGenerator,
-    SimulationBatch,
-    SimulationBatchReport,
 )
 
 logger = logging.getLogger(__name__)

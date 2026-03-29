@@ -1,6 +1,7 @@
 from typing import Optional, Protocol
 
-from k8s_decision_maker.domain.models import Decision, EvaluatedProposal, SystemSnapshot
+from odt_common.models import Decision, EvaluatedProposal
+from k8s_decision_maker.domain.models import SystemSnapshot
 
 
 class DecisionPolicy(Protocol):

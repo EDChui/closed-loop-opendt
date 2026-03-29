@@ -1,6 +1,6 @@
 from typing import AsyncIterator, Protocol
 
-from k8s_decision_maker.domain import SimulationBatch, SimulationBatchReport
+from odt_common.models import SimulationBatch, SimulationBatchReport
 
 
 class SimulationGateway(Protocol):

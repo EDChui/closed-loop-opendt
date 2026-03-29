@@ -1,6 +1,8 @@
 import logging
 
-from k8s_decision_maker.domain import ProposalGenerator, ObservedState, SimulationBatch, Decision, DecisionProposal
+
+from odt_common.models import Decision, Proposal, SimulationBatch
+from k8s_decision_maker.domain import ProposalGenerator, ObservedState
 from k8s_decision_maker.domain.kubernetes import K8sActionKind, K8sSystemSnapshot
 
 logger = logging.getLogger(__name__)
@@ -18,7 +20,7 @@ class K8sProposalGenerator(ProposalGenerator):
         # Proposal 0 always keep the current topology
         proposal_id = f"proposal-{state.state_id}-0"
         decision = Decision(action=K8sActionKind.NO_OP)
-        proposal = DecisionProposal(
+        proposal = Proposal(
             proposal_id=proposal_id,
             based_on_state_id=state.state_id,
             candidate_config=current_topology,
@@ -33,7 +35,7 @@ class K8sProposalGenerator(ProposalGenerator):
             new_topology.clusters[0].hosts[0].count = max(1, i)
             decision = Decision(action=K8sActionKind.NO_OP)
 
-            proposal = DecisionProposal(
+            proposal = Proposal(
                 proposal_id=proposal_id,
                 based_on_state_id=state.state_id,
                 candidate_config=new_topology,

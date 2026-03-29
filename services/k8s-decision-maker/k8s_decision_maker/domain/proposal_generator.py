@@ -1,6 +1,7 @@
 from typing import Protocol
 
-from k8s_decision_maker.domain.models import ObservedState, SimulationBatch
+from odt_common.models import SimulationBatch
+from k8s_decision_maker.domain.models import ObservedState
 
 
 class ProposalGenerator(Protocol):

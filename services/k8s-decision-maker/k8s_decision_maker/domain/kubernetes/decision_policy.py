@@ -1,6 +1,8 @@
 import logging
 from typing import Optional
-from k8s_decision_maker.domain import DecisionPolicy, EvaluatedProposal, SystemSnapshot, Decision
+
+from odt_common.models import Decision, EvaluatedProposal
+from k8s_decision_maker.domain import DecisionPolicy, SystemSnapshot
 from k8s_decision_maker.domain.kubernetes import K8sActionKind
 
 logger = logging.getLogger(__name__)
