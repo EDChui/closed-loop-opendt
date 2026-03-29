@@ -77,11 +77,6 @@ class SimulatorConfig(BaseModel):
     simulation_frequency_minutes: int = Field(
         default=15, description="Simulation frequency in minutes (simulated time)", gt=0
     )
-    background_load_nodes: int = Field(
-        ...,
-        description="Number of nodes reserved for background load (not available for simulation)",
-        ge=0,
-    )
 
 
 class CalibratorConfig(BaseModel):
