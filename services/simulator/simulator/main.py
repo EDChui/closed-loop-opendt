@@ -50,7 +50,7 @@ class SimulationService:
             kafka_bootstrap_servers: Kafka broker addresses
             workload_topic: Kafka topic name for workload events (dc.workload)
             topology_topic: Kafka topic name for topology updates (dc.topology)
-            sim_topology_topic: Kafka topic name for simulated topology updates (sim.topology)
+            sim_topology_topic: Kafka topic name for calibrated real topology updates (sim.topology)
             simulation_frequency_minutes: Simulation frequency in simulated time minutes
             speed_factor: Configured simulation speed multiplier
             run_output_dir: Base directory for run outputs
@@ -101,7 +101,7 @@ class SimulationService:
 
         # Topology state
         self.real_topology: Topology | None = None
-        self.simulated_topology: Topology | None = None
+        self.calibrated_real_topology: Topology | None = None
 
         # Statistics
         self.tasks_processed = 0
@@ -214,7 +214,7 @@ class SimulationService:
             logger.warning("OpenDC runner not available, skipping simulation")
             return
 
-        if not self.simulated_topology:
+        if not self.calibrated_real_topology:
             logger.warning("No topology available, skipping simulation")
             return
 
@@ -240,7 +240,7 @@ class SimulationService:
         self._log_simulation_overview(all_tasks, aligned_simulated_time)
 
         # Apply background load reduction to topology
-        topology_to_use = self.simulated_topology
+        topology_to_use = self.calibrated_real_topology
 
         # Create directories
         run_dir = self.output_base_dir / "opendc" / f"run_{self.run_number}"
@@ -366,17 +366,22 @@ class SimulationService:
             # Update real topology
             self.real_topology = topology_snapshot.topology
 
-            # Initialize simulated topology if not set
-            if self.simulated_topology is None:
-                # Deep copy so we can modify it independently
-                self.simulated_topology = copy.deepcopy(self.real_topology)
-                logger.info("Initialized simulated topology from real topology")
+            # Update the calibrated real topology as well (initially the same, can be modified by sim topology updates from calibrator)
+            self.calibrated_real_topology = copy.deepcopy(self.real_topology)
+            
+            # Clear result cache since topology changed
+            self.result_cache.clear()
+            logger.info("🗑️  Cleared result cache due to topology update")
+
+            # Log update details
+            total_hosts = sum(host.count for cluster in topology_snapshot.topology.clusters for host in cluster.hosts)
+            logger.info(f"   Total hosts: {total_hosts}")
 
         except Exception as e:
             logger.error(f"Error processing topology message: {e}", exc_info=True)
 
     def _process_topology_update_message(self, message_data: dict[str, Any]) -> None:
-        """Process a simulated topology update message from Kafka.
+        """Process a calibrated real topology update message from Kafka.
 
         Args:
             message_data: Raw message data from Kafka (raw Topology, not TopologySnapshot)
@@ -386,11 +391,11 @@ class SimulationService:
             topology = Topology(**message_data)
 
             logger.info(
-                f"🔄 Received simulated topology update: {len(topology.clusters)} cluster(s)"
+                f"🔄 Received calibrated real topology update: {len(topology.clusters)} cluster(s)"
             )
 
-            # Update simulated topology
-            self.simulated_topology = topology
+            # Update calibrated real topology
+            self.calibrated_real_topology = topology
 
             # Clear result cache since topology changed
             self.result_cache.clear()
