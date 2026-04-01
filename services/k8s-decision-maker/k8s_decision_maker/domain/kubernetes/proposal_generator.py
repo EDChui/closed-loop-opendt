@@ -1,3 +1,4 @@
+import copy
 import logging
 
 
@@ -23,7 +24,7 @@ class K8sProposalGenerator(ProposalGenerator):
         proposal = Proposal(
             proposal_id=proposal_id,
             based_on_state_id=state.state_id,
-            candidate_config=current_topology,
+            candidate_topology=current_topology,
             decision=decision
         )
         proposals.append(proposal)
@@ -31,14 +32,14 @@ class K8sProposalGenerator(ProposalGenerator):
         # TODO: Actual meaningful proposals
         for i in range(1, 4):
             proposal_id = f"proposal-{state.state_id}-{i}"
-            new_topology = current_topology.model_copy()
+            new_topology = copy.deepcopy(current_topology)
             new_topology.clusters[0].hosts[0].count = max(1, i)
             decision = Decision(action=K8sActionKind.NO_OP)
 
             proposal = Proposal(
                 proposal_id=proposal_id,
                 based_on_state_id=state.state_id,
-                candidate_config=new_topology,
+                candidate_topology=new_topology,
                 decision=decision
             )
             proposals.append(proposal)

@@ -1,35 +1,40 @@
 """Simulator Service - Main Entry Point."""
 
 import copy
-import json
 import logging
 import os
 import time
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from odt_common import ResultCache, TaskAccumulator, load_config_from_env
-from odt_common.models import Task, Topology, TopologySnapshot
+from odt_common import TaskAccumulator, load_config_from_env
+from odt_common.models import Task, Topology, TopologySnapshot, SimulationBatch, SimulationBatchReport, ProposalOutcome, SimulationResult
 from odt_common.odc_runner import OpenDCRunner
-from odt_common.utils import get_kafka_bootstrap_servers, get_kafka_consumer, get_kafka_producer
+from odt_common.utils import get_kafka_bootstrap_servers, get_kafka_consumer, get_kafka_producer, send_message
 
+from simulator.proposal_runner import ProposalRunner
 from simulator.result_processor import SimulationResultProcessor
+from simulator.result_analyzer import SimulationResultAnalyzer
+from simulator.models import ProposalExecutionResult
+
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+logging.getLogger("kafka").setLevel(logging.WARNING)
 
 
 class SimulationService:
     """Core simulation service that processes workload and runs OpenDC simulations.
 
     The service:
-    1. Listens to dc.workload (tasks) and dc.topology (topology snapshots)
+    1. Listens to dc.workload (tasks), dc.topology (topology snapshots), 
+       sim.batch (simulation batches) and sim.topology (calibrated real topology updates) Kafka topics
     2. Accumulates tasks chronologically
     3. Triggers simulations at specified frequency (simulated time)
-    4. Caches results based on topology hash + task count
     """
 
     def __init__(
@@ -37,8 +42,11 @@ class SimulationService:
         kafka_bootstrap_servers: str,
         workload_topic: str,
         topology_topic: str,
+        sim_batch_topic: str,
+        sim_batch_report_topic: str,
         sim_topology_topic: str,
         simulation_frequency_minutes: int,
+        max_parallel_workers: int,
         speed_factor: float,
         run_output_dir: str,
         run_id: str,
@@ -50,6 +58,8 @@ class SimulationService:
             kafka_bootstrap_servers: Kafka broker addresses
             workload_topic: Kafka topic name for workload events (dc.workload)
             topology_topic: Kafka topic name for topology updates (dc.topology)
+            sim_batch_topic: Kafka topic name for simulation batch triggers (sim.batch)
+            sim_batch_report_topic: Kafka topic name for simulation batch reports (sim.batch.report)
             sim_topology_topic: Kafka topic name for calibrated real topology updates (sim.topology)
             simulation_frequency_minutes: Simulation frequency in simulated time minutes
             speed_factor: Configured simulation speed multiplier
@@ -61,8 +71,11 @@ class SimulationService:
         self.consumer_group = consumer_group
         self.workload_topic = workload_topic
         self.topology_topic = topology_topic
-        self.sim_topology_topic = sim_topology_topic
+        self.sim_batch_topic = sim_batch_topic
+        self.sim_batch_report_topic = sim_batch_report_topic
+        self.calibration_topic = sim_topology_topic                                     # TODO: Rename to calibration_topic for clarity
         self.simulation_frequency = timedelta(minutes=simulation_frequency_minutes)
+        self.max_parallel_workers = max_parallel_workers
         self.speed_factor = speed_factor
         self.run_id = run_id
 
@@ -75,17 +88,17 @@ class SimulationService:
 
         # Initialize result processor for aggregating simulation outputs
         self.result_processor = SimulationResultProcessor(self.output_base_dir)
-        logger.info("Initialized result processor")
+        self.result_analyzer = SimulationResultAnalyzer()
 
         # Initialize Kafka consumer
-        topics = [workload_topic, topology_topic, sim_topology_topic]
+        topics = [workload_topic, topology_topic, sim_batch_topic, sim_topology_topic]
         self.consumer = get_kafka_consumer(
             topics=topics,
             group_id=consumer_group,
             bootstrap_servers=kafka_bootstrap_servers,
         )
 
-        # Initialize Kafka producer (for future use)
+        # Initialize Kafka producer for reporting simulation results
         self.producer = get_kafka_producer(kafka_bootstrap_servers)
 
         # Initialize task accumulator
@@ -99,17 +112,20 @@ class SimulationService:
             logger.error("Simulation will not be available")
             self.opendc_runner = None
 
+        self.proposal_runner = ProposalRunner(
+            max_parallel_workers=max_parallel_workers,
+        )
+
         # Topology state
         self.real_topology: Topology | None = None
         self.calibrated_real_topology: Topology | None = None
+        self.sim_batch: SimulationBatch | None = None
+        self.sim_batch_received_at: float | None = None
 
         # Statistics
         self.tasks_processed = 0
         self.simulations_run = 0
         self.run_number = 0
-
-        # Initialize result cache
-        self.result_cache = ResultCache()
 
         # Speed tracking - to monitor if we're keeping up with configured speed
         self.first_simulation_wall_time: datetime | None = None
@@ -121,6 +137,7 @@ class SimulationService:
         logger.info(
             f"Simulation frequency: {simulation_frequency_minutes} minutes (simulated time)"
         )
+        logger.info(f"Max parallel workers for simulations: {max_parallel_workers}")
     
     def _log_simulation_overview(self, all_tasks: list, aligned_simulated_time: datetime) -> None:
         # Get task time range
@@ -203,19 +220,77 @@ class SimulationService:
                     )
 
         logger.info("=" * 80)
+    
+    # ====================
+    # Simulation post-processing
+    # ====================
+
+    def _update_simulation_result_metadata(self, proposal_dir: Path, simulation_result: SimulationResult) -> None:
+        """Append simulation result to proposal metadata.json for easier access to key metrics without needing to read parquet files."""
+        try:
+            metadata_file = proposal_dir / "metadata.json"
+            metadata = json.loads(metadata_file.read_text())
+            metadata["simulation_result"] = {
+                "runtime": str(simulation_result.runtime),
+                "utilization": simulation_result.utilization,
+            }
+            metadata_file.write_text(json.dumps(metadata, indent=2))
+            logger.debug(f"Updated simulation result metadata for proposal in {proposal_dir}")
+        except Exception as e:
+            logger.error(f"Failed to update simulation result metadata: {e}", exc_info=True)
+
+    def _analyze_and_create_simulation_batch_report(self, proposal_execution_results: list[ProposalExecutionResult]) -> SimulationBatchReport:
+        outcomes = []
+
+        if self.sim_batch is None:
+            logger.error("No simulation batch available when creating report")
+            return SimulationBatchReport(
+                batch_id="unknown",
+                based_on_state_id="unknown",
+                created_at=time.time(),
+                received_at=self.sim_batch_received_at if self.sim_batch_received_at else time.time(),
+                outcomes=outcomes
+            )
+        
+        for execution_result in proposal_execution_results:
+            if not execution_result.output_dir:
+                logger.warning(f"No output directory for proposal {execution_result.proposal_id}, skipping result analysis")
+                continue
+
+            result = self.result_analyzer.analyze_result(execution_result.output_dir)
+            self._update_simulation_result_metadata(execution_result.proposal_dir, result)
+            outcome = ProposalOutcome(
+                proposal_id=execution_result.proposal_id,
+                result=result,
+            )
+            outcomes.append(outcome)
+
+        sim_batch_report = SimulationBatchReport(
+            batch_id=self.sim_batch.batch_id,
+            based_on_state_id=self.sim_batch.based_on_state_id,
+            created_at=time.time(),
+            received_at=self.sim_batch_received_at if self.sim_batch_received_at else time.time(),
+            outcomes=outcomes
+        )
+
+        return sim_batch_report
 
     def _run_simulation(self) -> None:
-        """Run OpenDC simulation with accumulated tasks.
-
-        Args:
-            heartbeat_time: Timestamp that triggered this simulation
-        """
+        """Run OpenDC simulation with accumulated tasks for the currently loaded proposals"""
         if not self.opendc_runner:
             logger.warning("OpenDC runner not available, skipping simulation")
             return
 
         if not self.calibrated_real_topology:
             logger.warning("No topology available, skipping simulation")
+            return
+        
+        if not self.sim_batch:
+            logger.warning("No simulation batch available, skipping simulation")
+            return
+        
+        if not self.sim_batch.proposals and len(self.sim_batch.proposals) == 0:
+            logger.warning("Simulation batch contains no proposals, skipping simulation")
             return
 
         # Get all accumulated tasks
@@ -226,9 +301,7 @@ class SimulationService:
             return
 
         # Calculate aligned simulation time
-        aligned_simulated_time = self.task_accumulator.get_next_simulation_time(
-            self.simulation_frequency
-        )
+        aligned_simulated_time = self.task_accumulator.get_next_simulation_time(self.simulation_frequency)
         if aligned_simulated_time is None:
             logger.error("Cannot calculate aligned simulation time")
             return
@@ -239,79 +312,47 @@ class SimulationService:
         # Log simulation overview with speed tracking
         self._log_simulation_overview(all_tasks, aligned_simulated_time)
 
-        # Apply background load reduction to topology
-        topology_to_use = self.calibrated_real_topology
-
-        # Create directories
-        run_dir = self.output_base_dir / "opendc" / f"run_{self.run_number}"
-        was_cached = False
-
-        if self.result_cache.can_reuse(topology_to_use, len(all_tasks)):
-            logger.info(
-                f"♻️  Reusing cached results for run {self.run_number} "
-                f"(topology unchanged, {len(all_tasks)} tasks)"
-            )
-
-            # Copy entire cached run directory to new run location
-            cached_run_dir = self.result_cache.get_cached_run_dir()
-            if cached_run_dir:
-                self.result_cache.copy_to_new_run(cached_run_dir, run_dir)
-
-                # Update metadata with new timestamp and cached flag
-                metadata_file = run_dir / "metadata.json"
-                metadata = json.loads(metadata_file.read_text())
-                metadata["simulated_time"] = aligned_simulated_time.replace(
-                    microsecond=0
-                ).isoformat()
-                metadata["wall_clock_time"] = (
-                    datetime.now(UTC).replace(microsecond=0, tzinfo=None).isoformat()
-                )
-                metadata["cached"] = True
-                metadata_file.write_text(json.dumps(metadata, indent=2))
-
-                logger.info(f"✅ Cached results copied to run_{self.run_number}")
-                was_cached = True
-        else:
-            # Run new simulation
-            logger.info(f"Running simulation {self.run_number} with {len(all_tasks)} tasks")
-
-            success, _ = self.opendc_runner.run_simulation(
-                tasks=all_tasks,
-                topology=topology_to_use,
-                run_dir=run_dir,
-                run_number=self.run_number,
-                simulated_time=aligned_simulated_time,
-                timeout_seconds=120,
-            )
-
-            if not success:
-                logger.error(f"Simulation {self.run_number} failed")
-                return
-
-            # Update cache with run directory (not output directory)
-            self.result_cache.update(topology_to_use, len(all_tasks), run_dir)
-            logger.info(f"✅ Simulation {self.run_number} complete, results cached")
+        # Run proposal simulations in parallel
+        proposal_execution_results: list[ProposalExecutionResult] = self.proposal_runner.run(
+            output_base_dir=self.output_base_dir,
+            run_number=self.run_number,
+            aligned_simulated_time=aligned_simulated_time,
+            tasks=all_tasks,
+            simulation_batch=self.sim_batch,
+            calibrated_real_topology=self.calibrated_real_topology,
+        )
 
         # Process and aggregate simulation results
-        output_dir = run_dir / "output"
-        try:
-            self.result_processor.process_simulation_results(
-                run_number=self.run_number,
-                output_dir=output_dir,
-                aligned_simulated_time=aligned_simulated_time,
-                cached=was_cached,
-            )
-        except Exception as e:
-            logger.error(f"Failed to process simulation results: {e}", exc_info=True)
+        baseline_result = proposal_execution_results[0] if proposal_execution_results else None
+        if baseline_result and baseline_result.output_dir:
+            output_dir = baseline_result.output_dir
+            was_cached = baseline_result.cached
+            try:
+                self.result_processor.process_simulation_results(
+                    run_number=self.run_number,
+                    output_dir=output_dir,
+                    aligned_simulated_time=aligned_simulated_time,
+                    cached=was_cached,
+                )
+            except Exception as e:
+                logger.error(f"Failed to process simulation results: {e}", exc_info=True)
 
         # Update statistics and simulation time
         self.simulations_run += 1
         self.task_accumulator.last_simulation_time = aligned_simulated_time
 
+        # Process and publish simulation batch report to Kafka
+        sim_batch_report = self._analyze_and_create_simulation_batch_report(proposal_execution_results)
+        self._publish_simulation_batch_report(sim_batch_report)
+
         logger.info(
             f"📊 Total Stats: {self.tasks_processed} tasks processed, "
             f"{self.run_number} simulations completed\n"
         )
+
+    # ====================
+    # Message processing methods
+    # ====================
 
     def _process_workload_message(self, message_data: dict[str, Any]) -> None:
         """Process a workload message (task or heartbeat) from Kafka.
@@ -359,7 +400,7 @@ class SimulationService:
             # Parse into TopologySnapshot model
             topology_snapshot = TopologySnapshot(**message_data)
 
-            logger.debug(
+            logger.info(
                 f"📡 Received topology snapshot (timestamp: {topology_snapshot.timestamp})"
             )
 
@@ -368,10 +409,6 @@ class SimulationService:
 
             # Update the calibrated real topology as well (initially the same, can be modified by sim topology updates from calibrator)
             self.calibrated_real_topology = copy.deepcopy(self.real_topology)
-            
-            # Clear result cache since topology changed
-            self.result_cache.clear()
-            logger.info("🗑️  Cleared result cache due to topology update")
 
             # Log update details
             total_hosts = sum(host.count for cluster in topology_snapshot.topology.clusters for host in cluster.hosts)
@@ -379,8 +416,42 @@ class SimulationService:
 
         except Exception as e:
             logger.error(f"Error processing topology message: {e}", exc_info=True)
+    
+    def _process_sim_batch_message(self, message_data: dict[str, Any]) -> None:
+        try:
+            sim_batch = SimulationBatch(**message_data)
+            self.sim_batch = sim_batch
+            self.sim_batch_received_at = time.time()
 
-    def _process_topology_update_message(self, message_data: dict[str, Any]) -> None:
+            logger.info(f"Received simulation batch: {sim_batch.batch_id} with {len(sim_batch.proposals)} proposals")
+
+        except Exception as e:
+            logger.error(f"Error processing sim batch message: {e}", exc_info=True)
+
+    def _publish_simulation_batch_report(self, sim_batch_report: SimulationBatchReport) -> None:        
+        logger.info(f"Publishing simulation batch report for batch {sim_batch_report.batch_id} with {len(sim_batch_report.outcomes)} outcomes")
+
+        for outcome in sim_batch_report.outcomes:
+            logger.info(
+                f"   Proposal {outcome.proposal_id}: "
+                f"Runtime={outcome.result.runtime}, "
+                f"Utilization={outcome.result.utilization}"
+            )
+
+        try:
+            report_data = sim_batch_report.model_dump(mode="json")
+            send_message(
+                producer=self.producer,
+                topic=self.sim_batch_report_topic,
+                message=report_data,
+                key=sim_batch_report.batch_id,
+            )
+            logger.info(f"Published simulation batch report for batch {sim_batch_report.batch_id}")
+
+        except Exception as e:
+            logger.error(f"Error publishing simulation batch report: {e}", exc_info=True)
+
+    def _process_calibration_message(self, message_data: dict[str, Any]) -> None:
         """Process a calibrated real topology update message from Kafka.
 
         Args:
@@ -388,6 +459,7 @@ class SimulationService:
         """
         try:
             # Parse into Topology model (not TopologySnapshot)
+            # TODO: In the future, maybe only the calibrationFactor is being passed to here instead of the full topology
             topology = Topology(**message_data)
 
             logger.info(
@@ -396,10 +468,6 @@ class SimulationService:
 
             # Update calibrated real topology
             self.calibrated_real_topology = topology
-
-            # Clear result cache since topology changed
-            self.result_cache.clear()
-            logger.info("🗑️  Cleared result cache due to topology update")
 
             # Log update details
             total_hosts = sum(host.count for cluster in topology.clusters for host in cluster.hosts)
@@ -422,8 +490,10 @@ class SimulationService:
                 self._process_workload_message(value)
             elif topic == self.topology_topic:
                 self._process_topology_message(value)
-            elif topic == self.sim_topology_topic:
-                self._process_topology_update_message(value)
+            elif topic == self.sim_batch_topic:
+                self._process_sim_batch_message(value)
+            elif topic == self.calibration_topic:
+                self._process_calibration_message(value)
             else:
                 logger.warning(f"Unknown topic: {topic}")
 
@@ -467,16 +537,21 @@ def main():
     kafka_bootstrap_servers = get_kafka_bootstrap_servers()
     workload_topic = config.kafka.topics["workload"].name
     topology_topic = config.kafka.topics["topology"].name
+    sim_batch_topic = config.kafka.topics["sim_batch"].name
+    sim_batch_report_topic = config.kafka.topics["sim_batch_report"].name
     sim_topology_topic = config.kafka.topics["sim_topology"].name
 
     # Get simulator configuration
     simulation_frequency_minutes = config.services.simulator.simulation_frequency_minutes
     speed_factor = config.global_config.speed_factor
+    max_parallel_workers = config.services.simulator.max_parallel_workers
     run_output_dir = Path(os.getenv("DATA_DIR", "/app/data"))
 
     logger.info(f"Kafka bootstrap servers: {kafka_bootstrap_servers}")
     logger.info(f"Workload topic: {workload_topic}")
     logger.info(f"Topology topic: {topology_topic}")
+    logger.info(f"Sim batch topic: {sim_batch_topic}")
+    logger.info(f"Sim batch report topic: {sim_batch_report_topic}")
     logger.info(f"Simulated topology topic: {sim_topology_topic}")
     logger.info(f"Simulation frequency: {simulation_frequency_minutes} minutes")
     logger.info(f"Speed factor: {speed_factor}x")
@@ -504,9 +579,12 @@ def main():
                 kafka_bootstrap_servers=kafka_bootstrap_servers,
                 workload_topic=workload_topic,
                 topology_topic=topology_topic,
+                sim_batch_topic=sim_batch_topic,
+                sim_batch_report_topic=sim_batch_report_topic,
                 sim_topology_topic=sim_topology_topic,
                 simulation_frequency_minutes=simulation_frequency_minutes,
                 speed_factor=speed_factor,
+                max_parallel_workers=max_parallel_workers,
                 run_output_dir=str(run_output_dir),
                 run_id=run_id,
                 consumer_group=consumer_group,

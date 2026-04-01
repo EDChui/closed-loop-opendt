@@ -1,14 +1,16 @@
-from abc import ABC
+from datetime import timedelta
+from typing import Optional
 from pydantic import BaseModel, Field
 
 from .proposal import Proposal
 
-class SimulationResult(BaseModel, ABC):
-    """Base class for simulation results."""
-
-    class Config:
-        extra = "allow"
-
+class SimulationResult(BaseModel):
+    runtime: Optional[timedelta] = Field(
+        None, description="Total runtime of the simulation"
+    )
+    utilization: Optional[float] = Field(
+        None, description="Average CPU utilization during the simulation"
+    )
 
 class ProposalOutcome(BaseModel):
     """Outcome of simulating a single proposal."""

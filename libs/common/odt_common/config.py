@@ -77,6 +77,9 @@ class SimulatorConfig(BaseModel):
     simulation_frequency_minutes: int = Field(
         default=15, description="Simulation frequency in minutes (simulated time)", gt=0
     )
+    max_parallel_workers: int = Field(
+        default=4, description="Maximum number of parallel OpenDC simulations", gt=0
+    )
 
 
 class CalibratorConfig(BaseModel):

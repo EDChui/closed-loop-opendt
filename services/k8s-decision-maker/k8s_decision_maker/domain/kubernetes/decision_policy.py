@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class K8sDecisionPolicy(DecisionPolicy):
-    def choose(self, proposals: list[EvaluatedProposal], current_snapshot: SystemSnapshot) -> Optional[Decision[K8sActionKind]]:
+    def choose(self, proposals: list[EvaluatedProposal], current_snapshot: SystemSnapshot) -> Optional[Decision]:
         logger.info(f"Evaluating {len(proposals)} proposals against current snapshot")
         # TODO: Complete me
 

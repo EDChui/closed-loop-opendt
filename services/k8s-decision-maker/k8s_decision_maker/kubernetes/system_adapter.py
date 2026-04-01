@@ -60,7 +60,7 @@ class K8sSystemAdapter(SystemPort):
         hosts: list[Host] = []
         for idx, (shape, count) in enumerate(grouped_shapes.items()):
             host = Host(
-                name=f"H{idx:02d}",
+                name=f"H{(idx+1):02d}",
                 count=count,
                 cpu=CPU(coreCount=shape.cpu_count, coreSpeed=self.cpu_frequency_mhz),
                 memory=Memory(memorySize=shape.memory_size_bytes),
@@ -83,8 +83,10 @@ class K8sSystemAdapter(SystemPort):
         topology = self._build_topology()
         return K8sSystemSnapshot(topology=topology)
 
-    async def apply_decision(self, decision: Decision[K8sActionKind]) -> None:
+    async def apply_decision(self, decision: Decision) -> None:
         logger.info(f"Applying decision: {decision}")
         # TODO: Implement me
         if decision.action == K8sActionKind.NO_OP:
-            pass
+            logger.info("No-op decision, nothing to apply")
+        else:
+            logger.warning(f"Received decision with action {decision.action}, but apply_decision is not implemented yet")
