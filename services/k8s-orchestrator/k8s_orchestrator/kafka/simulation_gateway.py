@@ -7,7 +7,7 @@ from typing import AsyncIterator, Optional
 from sqlalchemy import Enum
 
 from odt_common.models import SimulationBatch, SimulationBatchReport
-from k8s_decision_maker.application.ports import SimulationGateway
+from k8s_orchestrator.application.ports import SimulationGateway
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ class KafkaSimulationGateway(SimulationGateway):
         kafka_bootstrap_servers: str,
         sim_batch_topic: str,
         sim_batch_report_topic: str,
-        consumer_group: str = "k8s-decision-maker",
+        consumer_group: str = "k8s-orchestrator",
     ):
         self.kafka_bootstrap_servers = kafka_bootstrap_servers
         self.sim_batch_topic = sim_batch_topic

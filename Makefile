@@ -101,7 +101,7 @@ setup:
 	@uv pip install -e "libs/common[test]"
 	@uv pip install -e libs/k8s-observability
 	@uv pip install -e ".[dev]"
-	@uv pip install -e ".[k8s-decision-maker]"
+	@uv pip install -e ".[k8s-orchestrator]"
 	@echo ""
 	@echo "Done. Activate with: source .venv/bin/activate"
 	@echo ""
@@ -176,9 +176,9 @@ logs-api:
 logs-k8s-trace-bridge:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f k8s-trace-bridge
 
-## logs-k8s-decision-maker: Tail logs for k8s-decision-maker service
-logs-k8s-decision-maker:
-	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose --profile k8s-decision-maker logs -f k8s-decision-maker
+## logs-k8s-orchestrator: Tail logs for k8s-orchestrator service
+logs-k8s-orchestrator:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose --profile k8s-orchestrator logs -f k8s-orchestrator
 
 ## logs-simulator: Tail logs for simulator service
 logs-simulator:
@@ -220,9 +220,9 @@ shell-api:
 shell-k8s-trace-bridge:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec k8s-trace-bridge /bin/bash
 
-## shell-k8s-decision-maker: Open a shell in the k8s-decision-maker container
-shell-k8s-decision-maker:
-	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose --profile k8s-decision-maker exec k8s-decision-maker /bin/bash
+## shell-k8s-orchestrator: Open a shell in the k8s-orchestrator container
+shell-k8s-orchestrator:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose --profile k8s-orchestrator exec k8s-orchestrator /bin/bash
 
 ## shell-simulator: Open a shell in the simulator container
 shell-simulator:

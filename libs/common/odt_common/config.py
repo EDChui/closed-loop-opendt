@@ -63,8 +63,8 @@ class K8sTraceBridgeConfig(BaseModel):
     )
 
 
-class K8sDecisionMakerConfig(BaseModel):
-    """K8s-Decision-Maker service configuration."""
+class K8sOrchestratorConfig(BaseModel):
+    """K8s-Orchestrator service configuration."""
 
     refresh_interval_seconds: int = Field(
         default=120, description="Interval in seconds to fetch real system status", gt=0
@@ -126,7 +126,7 @@ class ServicesConfig(BaseModel):
     """Configuration for all services."""
 
     k8s_trace_bridge: K8sTraceBridgeConfig = Field(alias="k8s-trace-bridge")
-    k8s_decision_maker: K8sDecisionMakerConfig = Field(alias="k8s-decision-maker")
+    k8s_orchestrator: K8sOrchestratorConfig = Field(alias="k8s-orchestrator")
     simulator: SimulatorConfig
     calibrator: CalibratorConfig | None = Field(
         None, description="Calibrator config (only required if calibration_enabled=true)"

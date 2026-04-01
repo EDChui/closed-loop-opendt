@@ -14,8 +14,8 @@ from odt_common.models.topology import (
 )
 from k8s_observability.models import K8sNodeShape
 from k8s_observability.kubernetes import K8sNodeExtractor
-from k8s_decision_maker.domain.kubernetes import K8sSystemSnapshot, K8sActionKind
-from k8s_decision_maker.application.ports import SystemPort
+from k8s_orchestrator.domain.kubernetes import K8sSystemSnapshot, K8sActionKind
+from k8s_orchestrator.application.ports import SystemPort
 
 logger = logging.getLogger(__name__)
 

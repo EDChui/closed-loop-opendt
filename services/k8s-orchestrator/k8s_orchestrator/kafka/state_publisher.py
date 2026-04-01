@@ -5,9 +5,9 @@ from aiokafka import AIOKafkaProducer
 from odt_common.models import TopologySnapshot
 
 from k8s_observability.utils import TimeUtils
-from k8s_decision_maker.application.ports.state_publisher import StatePublisher
-from k8s_decision_maker.domain import ObservedState
-from k8s_decision_maker.domain.kubernetes import K8sSystemSnapshot
+from k8s_orchestrator.application.ports.state_publisher import StatePublisher
+from k8s_orchestrator.domain import ObservedState
+from k8s_orchestrator.domain.kubernetes import K8sSystemSnapshot
 
 
 logger = logging.getLogger(__name__)

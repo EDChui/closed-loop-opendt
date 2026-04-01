@@ -10,10 +10,10 @@ from odt_common.models import (
     SimulationBatchReport,
     EvaluatedProposal,
 )
-from k8s_decision_maker.application.config import DecisionOrchestratorConfig
-from k8s_decision_maker.application.events import Event, Priority, QueueItem, RefreshTick
-from k8s_decision_maker.application.ports import SystemPort, SimulationGateway, StatePublisher
-from k8s_decision_maker.domain import (
+from k8s_orchestrator.application.config import DecisionOrchestratorConfig
+from k8s_orchestrator.application.events import Event, Priority, QueueItem, RefreshTick
+from k8s_orchestrator.application.ports import SystemPort, SimulationGateway, StatePublisher
+from k8s_orchestrator.domain import (
     DecisionPolicy,
     ObservedState,
     ProposalGenerator,

@@ -2,7 +2,7 @@ from enum import StrEnum
 from dataclasses import dataclass
 
 from odt_common.models.topology import Topology
-from k8s_decision_maker.domain import SystemSnapshot
+from k8s_orchestrator.domain import SystemSnapshot
 
 
 class K8sActionKind(StrEnum):

@@ -1,7 +1,7 @@
 from typing import Protocol
 
 from odt_common.models import Decision
-from k8s_decision_maker.domain import SystemSnapshot
+from k8s_orchestrator.domain import SystemSnapshot
 
 
 class SystemPort(Protocol):

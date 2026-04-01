@@ -3,8 +3,8 @@ import logging
 
 
 from odt_common.models import Decision, Proposal, SimulationBatch
-from k8s_decision_maker.domain import ProposalGenerator, ObservedState
-from k8s_decision_maker.domain.kubernetes import K8sActionKind, K8sSystemSnapshot
+from k8s_orchestrator.domain import ProposalGenerator, ObservedState
+from k8s_orchestrator.domain.kubernetes import K8sActionKind, K8sSystemSnapshot
 
 logger = logging.getLogger(__name__)
 

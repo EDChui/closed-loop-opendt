@@ -4,12 +4,12 @@ import os
 
 from odt_common import load_config_from_env
 from odt_common.utils import get_kafka_bootstrap_servers
-from k8s_decision_maker.application.config import DecisionOrchestratorConfig
-from k8s_decision_maker.application.orchestrator import DecisionOrchestrator
-from k8s_decision_maker.kubernetes.system_adapter import K8sSystemAdapter
-from k8s_decision_maker.domain.kubernetes import K8sProposalGenerator, K8sDecisionPolicy
-from k8s_decision_maker.kafka.state_publisher import KafkaStatePublisher
-from k8s_decision_maker.kafka.simulation_gateway import KafkaSimulationGateway
+from k8s_orchestrator.application.config import DecisionOrchestratorConfig
+from k8s_orchestrator.application.orchestrator import DecisionOrchestrator
+from k8s_orchestrator.kubernetes.system_adapter import K8sSystemAdapter
+from k8s_orchestrator.domain.kubernetes import K8sProposalGenerator, K8sDecisionPolicy
+from k8s_orchestrator.kafka.state_publisher import KafkaStatePublisher
+from k8s_orchestrator.kafka.simulation_gateway import KafkaSimulationGateway
 
 
 logging.basicConfig(
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    logger.info("Starting Kubernetes Decision Maker service")
+    logger.info("Starting Kubernetes Orchestrator service")
     # Load configuration from environment
     try:
         config = load_config_from_env()
@@ -40,14 +40,14 @@ async def main() -> None:
     logger.info(f"Simulation batch report topic: {sim_batch_report_topic}")
 
     # Get other configuration from environment variables
-    consumer_group = os.getenv("CONSUMER_GROUP", "k8s-decision-maker")
+    consumer_group = os.getenv("CONSUMER_GROUP", "k8s-orchestrator")
     kubeconfig_path = os.getenv("KUBECONFIG", "/kube/config")
 
     logger.info(f"Consumer group: {consumer_group}")
 
     # Get config settings
     cpu_frequency_mhz = config.global_config.cpu_frequency_mhz
-    refresh_interval_seconds = config.services.k8s_decision_maker.refresh_interval_seconds
+    refresh_interval_seconds = config.services.k8s_orchestrator.refresh_interval_seconds
 
     logger.info(f"CPU frequency (MHz): {cpu_frequency_mhz}")
     logger.info(f"Refresh interval (seconds): {refresh_interval_seconds}")
@@ -95,7 +95,7 @@ async def main() -> None:
     finally:
         await state_publisher.stop()
         await simulation_gateway.stop()
-        logger.info("Kubernetes Decision Maker service stopped")
+        logger.info("Kubernetes Orchestrator service stopped")
 
 
 if __name__ == "__main__":

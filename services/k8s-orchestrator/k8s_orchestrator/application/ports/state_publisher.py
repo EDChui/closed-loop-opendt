@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from k8s_decision_maker.domain import ObservedState, SnapshotType
+from k8s_orchestrator.domain import ObservedState, SnapshotType
 
 
 class StatePublisher(Protocol[SnapshotType]):
