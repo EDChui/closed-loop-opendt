@@ -84,7 +84,7 @@ class K8sSystemAdapter(SystemPort):
         return K8sSystemSnapshot(topology=topology)
 
     async def apply_decision(self, decision: Decision) -> None:
-        logger.info(f"Applying decision: {decision}")
+        logger.info(f"✏️ Applying decision: {decision}")
         # TODO: Implement me
         if decision.action == K8sActionKind.NO_OP:
             logger.info("No-op decision, nothing to apply")

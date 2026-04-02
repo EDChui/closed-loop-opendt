@@ -1,10 +1,10 @@
 """Simulator Service - Main Entry Point."""
 
 import copy
+import json
 import logging
 import os
 import time
-import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -14,10 +14,10 @@ from odt_common.models import Task, Topology, TopologySnapshot, SimulationBatch,
 from odt_common.odc_runner import OpenDCRunner
 from odt_common.utils import get_kafka_bootstrap_servers, get_kafka_consumer, get_kafka_producer, send_message
 
+from simulator.models import ProposalExecutionResult
 from simulator.proposal_runner import ProposalRunner
 from simulator.result_processor import SimulationResultProcessor
 from simulator.result_analyzer import SimulationResultAnalyzer
-from simulator.models import ProposalExecutionResult
 
 
 logging.basicConfig(
@@ -25,6 +25,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logging.getLogger("kafka").setLevel(logging.WARNING)
+logging.getLogger("odt_common").setLevel(logging.WARNING)
 
 
 class SimulationService:
@@ -423,7 +424,7 @@ class SimulationService:
             self.sim_batch = sim_batch
             self.sim_batch_received_at = time.time()
 
-            logger.info(f"Received simulation batch: {sim_batch.batch_id} with {len(sim_batch.proposals)} proposals")
+            logger.info(f"📡 Received simulation batch: {sim_batch.batch_id} with {len(sim_batch.proposals)} proposals")
 
         except Exception as e:
             logger.error(f"Error processing sim batch message: {e}", exc_info=True)

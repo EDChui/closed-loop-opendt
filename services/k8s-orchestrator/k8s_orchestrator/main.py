@@ -1,5 +1,5 @@
-import logging
 import asyncio
+import logging
 import os
 
 from odt_common import load_config_from_env
@@ -16,6 +16,7 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+logging.getLogger("aiokafka").setLevel(logging.WARNING)
 
 
 async def main() -> None:

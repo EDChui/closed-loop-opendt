@@ -1,18 +1,18 @@
+import copy
+import json
 import logging
+import shutil
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, UTC
 from pathlib import Path
-import shutil
-import json
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import copy
 
 from odt_common.models import Task, Topology, SimulationBatch, Proposal
 from odt_common.odc_runner import OpenDCRunner
 from simulator.models import ProposalExecutionPlan, ProposalExecutionResult
 
 logger = logging.getLogger(__name__)
-logging.getLogger("odt_common").setLevel(logging.WARNING)
+
 
 def run_single_proposal_simulation(
         run_number: int,

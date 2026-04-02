@@ -3,7 +3,6 @@ import os
 import signal
 import sys
 import threading
-from pathlib import Path
 
 from odt_common import load_config_from_env
 from odt_common.utils import get_kafka_bootstrap_servers
@@ -15,6 +14,7 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+logging.getLogger("kafka").setLevel(logging.WARNING)
 
 class K8sObserverOrchestrator:
     """Orchestrates multiple threaded workers for the K8s Observer service."""
@@ -95,7 +95,7 @@ class K8sObserverOrchestrator:
         )
         self.resource_usage_collector.start()
 
-        logger.info("\n" + "=" * 70)
+        logger.info("=" * 70)
         logger.info("✅ All workers started and synchronized")
         logger.info("=" * 70)
 

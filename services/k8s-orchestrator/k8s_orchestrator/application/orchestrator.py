@@ -106,7 +106,7 @@ class DecisionOrchestrator:
 
     async def _refresh_cycle(self, cause: str) -> None:
         """Performs a refresh cycle: fetches the current state, publishes it, generates proposals, and submits them for simulation."""
-        logger.info(f"Starting refresh cycle (cause={cause})")
+        logger.info(f"🔁 Starting refresh cycle (cause={cause})")
         snapshot = await asyncio.wait_for(
             self.real_system.fetch_status(),
             timeout=self.config.fetch_timeout_seconds,
@@ -115,7 +115,7 @@ class DecisionOrchestrator:
         # Check if the snapshot has actually changed meaningfully
         is_changed = self.current_state is None or self.current_state.snapshot != snapshot
         if not is_changed:
-            logger.info(f"Refresh cycle completed (cause={cause}): no meaningful changes")
+            logger.info(f"⏹️ Refresh cycle completed (cause={cause}): no meaningful changes")
             return
 
         revision = 1 if self.current_state is None else self.current_state.revision + 1
@@ -126,7 +126,7 @@ class DecisionOrchestrator:
             snapshot=snapshot,
         )
 
-        logger.info(f"Refresh cycle completed (cause={cause}): observed new state with ID {observed_state.state_id} and revision {observed_state.revision}")
+        logger.info(f"🆕 Refresh cycle completed (cause={cause}): observed new state with ID {observed_state.state_id} and revision {observed_state.revision}")
         self.current_state = observed_state
 
         self._evict_old_seen_reports()

@@ -116,15 +116,13 @@ class K8sWorkloadProducer(BaseProducer):
     
     def _process_stream(self):
         for terminal_metadata in self.terminal_metadata_stream.stream():
-            logger.info(f"Captured completed {self.resource_type} in namespace {self.namespace} - {terminal_metadata.uid} ({terminal_metadata.terminal_status})")
-
             # Store in the database
             task_id = self.task_record_repo.add(terminal_metadata)
             self.task_record_repo.commit()
 
             # Fetch the corresponding resource usage snapshots from the database
             usage_snapshots = self.resource_usage_repo.list_by_uid(terminal_metadata.uid)
-            logger.info(f"Fetched {len(usage_snapshots)} resource usage snapshots for {terminal_metadata.uid}")
+            logger.info(f"Captured completed {self.resource_type} {terminal_metadata.uid} with {len(usage_snapshots)} resource usage snapshots ({terminal_metadata.terminal_status})")
 
             # Build Fragments
             fragments = self._convert_usage_snapshots_to_fragments(
