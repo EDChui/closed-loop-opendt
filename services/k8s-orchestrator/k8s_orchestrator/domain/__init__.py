@@ -3,13 +3,13 @@ from k8s_orchestrator.domain.models import (
     SnapshotType,
     ObservedState,
 )
-from k8s_orchestrator.domain.decision_policy import DecisionPolicy
+from k8s_orchestrator.domain.decision_maker import DecisionMaker
 from k8s_orchestrator.domain.proposal_generator import ProposalGenerator
 
 __all__ = [
     "SystemSnapshot",
     "SnapshotType",
     "ObservedState",
-    "DecisionPolicy",
+    "DecisionMaker",
     "ProposalGenerator",
 ]

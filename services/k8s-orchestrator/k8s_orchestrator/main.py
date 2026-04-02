@@ -7,7 +7,7 @@ from odt_common.utils import get_kafka_bootstrap_servers
 from k8s_orchestrator.application.config import DecisionOrchestratorConfig
 from k8s_orchestrator.application.orchestrator import DecisionOrchestrator
 from k8s_orchestrator.kubernetes.system_adapter import K8sSystemAdapter
-from k8s_orchestrator.domain.kubernetes import K8sProposalGenerator, K8sDecisionPolicy
+from k8s_orchestrator.domain.kubernetes import K8sProposalGenerator, K8sDecisionMaker
 from k8s_orchestrator.kafka.state_publisher import KafkaStatePublisher
 from k8s_orchestrator.kafka.simulation_gateway import KafkaSimulationGateway
 
@@ -63,7 +63,7 @@ async def main() -> None:
         cpu_frequency_mhz=cpu_frequency_mhz
     )
     proposal_generator = K8sProposalGenerator()
-    decision_policy = K8sDecisionPolicy()
+    decision_maker = K8sDecisionMaker()
     state_publisher = KafkaStatePublisher(
         kafka_bootstrap_servers=kafka_bootstrap_servers,
         topology_topic=topology_topic
@@ -82,7 +82,7 @@ async def main() -> None:
     decision_orchestrator = DecisionOrchestrator(
         real_system=system_adapter,
         proposal_generator=proposal_generator,
-        decision_policy=decision_policy,
+        decision_maker=decision_maker,
         state_publisher=state_publisher,
         simulation_gateway=simulation_gateway,
         config=orchestrator_config

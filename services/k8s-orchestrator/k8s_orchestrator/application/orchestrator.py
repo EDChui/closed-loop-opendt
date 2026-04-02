@@ -14,7 +14,7 @@ from k8s_orchestrator.application.config import DecisionOrchestratorConfig
 from k8s_orchestrator.application.events import Event, Priority, QueueItem, RefreshTick
 from k8s_orchestrator.application.ports import SystemPort, SimulationGateway, StatePublisher
 from k8s_orchestrator.domain import (
-    DecisionPolicy,
+    DecisionMaker,
     ObservedState,
     ProposalGenerator,
 )
@@ -27,14 +27,14 @@ class DecisionOrchestrator:
         self,
         real_system: SystemPort,
         proposal_generator: ProposalGenerator,
-        decision_policy: DecisionPolicy,
+        decision_maker: DecisionMaker,
         state_publisher: StatePublisher,
         simulation_gateway: SimulationGateway,
         config: DecisionOrchestratorConfig,
     ):
         self.real_system = real_system
         self.proposal_generator = proposal_generator
-        self.decision_policy = decision_policy
+        self.decision_maker = decision_maker
         self.state_publisher = state_publisher
         self.simulation_gateway = simulation_gateway
         self.config = config
@@ -160,7 +160,7 @@ class DecisionOrchestrator:
         if self.current_state is None:
             return
 
-        decision = self.decision_policy.choose(evaluated, self.current_state.snapshot)
+        decision = self.decision_maker.choose(evaluated, self.current_state.snapshot)
         self.seen_reports[report.batch_id] = time.time()
         self.pending_batches.pop(report.batch_id, None)
 
