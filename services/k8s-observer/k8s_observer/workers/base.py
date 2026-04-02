@@ -1,4 +1,4 @@
-"""Base producer class for K8S-Trace-Bridge threaded producers."""
+"""Base producer class for k8s-observer threaded producers."""
 
 import logging
 import threading

@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from k8s_observability.models import K8sResourceUsageSnapshot
 from k8s_observability.kubernetes import K8sJobUidResolver
 from k8s_observability.utils import TimeUtils, UnitUtils
-from k8s_trace_bridge.prometheus.client import PrometheusClient
+from k8s_observer.prometheus.client import PrometheusClient
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,4 @@
-"""Workload producer for K8S-Trace-Bridge service.
+"""Workload producer for k8s-observer service.
 
 Streams real-time task/workload events to Kafka.
 """
@@ -13,7 +13,7 @@ from odt_common import Fragment, Task
 from k8s_observability.models import K8sTaskRecord, K8sResourceUsageSnapshot
 from k8s_observability.kubernetes import K8sResourceTerminalStream
 from k8s_observability.persistence import build_engine, build_session_factory, K8sTaskRecordRepository, K8sResourceUsageSnapshotRepository
-from k8s_trace_bridge.producers.base import BaseProducer
+from k8s_observer.producers.base import BaseProducer
 
 
 logger = logging.getLogger(__name__)

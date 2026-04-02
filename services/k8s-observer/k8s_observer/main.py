@@ -8,16 +8,16 @@ from pathlib import Path
 from odt_common import load_config_from_env
 from odt_common.utils import get_kafka_bootstrap_servers
 from odt_common.config import K8sWorkloadContext
-from k8s_trace_bridge.producers import HeartbeatProducer, K8sWorkloadProducer
-from k8s_trace_bridge.workers import BaseWorker, K8sResourceUsageCollector
+from k8s_observer.producers import HeartbeatProducer, K8sWorkloadProducer
+from k8s_observer.workers import BaseWorker, K8sResourceUsageCollector
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-class K8sTraceBridgeOrchestrator:
-    """Orchestrates multiple threaded workers for the K8s Trace Bridge service."""
+class K8sObserverOrchestrator:
+    """Orchestrates multiple threaded workers for the K8s Observer service."""
 
     def __init__(self):
         """Initialize the orchestrator"""
@@ -154,8 +154,8 @@ class K8sTraceBridgeOrchestrator:
             # Load configuration
             logger.info("Loading configuration...")
             config = load_config_from_env()
-            namespace = config.services.k8s_trace_bridge.namespace
-            heartbeat_frequency_minutes = config.services.k8s_trace_bridge.heartbeat_frequency_minutes
+            namespace = config.services.k8s_observer.namespace
+            heartbeat_frequency_minutes = config.services.k8s_observer.heartbeat_frequency_minutes
             kubeconfig_path = os.getenv("KUBECONFIG", "/kube/config")
             prometheus_url = os.getenv("PROMETHEUS_URL", "http://host.docker.internal:9090")
             database_url = os.getenv("DATABASE_URL", "postgresql+psycopg://opendt:opendt@postgres:5432/opendt")
@@ -197,7 +197,7 @@ class K8sTraceBridgeOrchestrator:
             # Wait for completion
             self.wait_for_completion()
 
-            logger.info("✅ K8s-Trace-Bridge service completed successfully")
+            logger.info("✅ k8s-observer service completed successfully")
             return 0
 
         except KeyboardInterrupt:
@@ -205,7 +205,7 @@ class K8sTraceBridgeOrchestrator:
             self.stop_all()
             return 0
         except Exception as e:
-            logger.error(f"❌ Error in K8s-Trace-Bridge service: {e}", exc_info=True)
+            logger.error(f"❌ Error in k8s-observer service: {e}", exc_info=True)
             self.stop_all()
             return 1
 
@@ -215,7 +215,7 @@ def main() -> int:
     Returns:
         Exit code: 0 for success, 1 for error
     """
-    orchestrator = K8sTraceBridgeOrchestrator()
+    orchestrator = K8sObserverOrchestrator()
     return orchestrator.run()
 
 if __name__ == "__main__":

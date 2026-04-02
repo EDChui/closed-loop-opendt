@@ -6,8 +6,8 @@ from requests.exceptions import RequestException
 from k8s_observability.persistence import build_engine, build_session_factory, K8sResourceUsageSnapshotRepository
 from k8s_observability.utils import TimeUtils
 
-from k8s_trace_bridge.workers.base import BaseWorker
-from k8s_trace_bridge.prometheus import PrometheusClient, PrometheusResourceCollector, PodResourceCollector, JobResourceCollector
+from k8s_observer.workers.base import BaseWorker
+from k8s_observer.prometheus import PrometheusClient, PrometheusResourceCollector, PodResourceCollector, JobResourceCollector
 
 
 logger = logging.getLogger(__name__)

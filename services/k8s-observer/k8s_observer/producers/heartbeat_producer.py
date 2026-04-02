@@ -4,7 +4,7 @@ import logging
 import threading
 from datetime import datetime, timezone
 
-from k8s_trace_bridge.producers.base import BaseProducer
+from k8s_observer.producers.base import BaseProducer
 
 logger = logging.getLogger(__name__)
 

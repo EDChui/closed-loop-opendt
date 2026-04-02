@@ -1,11 +1,11 @@
-"""Base producer class for K8S-Trace-Bridge threaded producers."""
+"""Base producer class for k8s-observer threaded producers."""
 
 import logging
 import threading
 from typing import Any
 
 from kafka import KafkaProducer
-from k8s_trace_bridge.workers import BaseWorker
+from k8s_observer.workers import BaseWorker
 from odt_common.utils import get_kafka_producer
 from odt_common.utils.kafka import send_message
 

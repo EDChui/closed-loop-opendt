@@ -1,3 +1,3 @@
-# k8s-trace-bridge
+# k8s-observer
 
 TODO: Complete me

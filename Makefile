@@ -172,9 +172,9 @@ logs-postgres-init:
 logs-api:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f api
 
-## logs-k8s-trace-bridge: Tail logs for k8s-trace-bridge service
-logs-k8s-trace-bridge:
-	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f k8s-trace-bridge
+## logs-k8s-observer: Tail logs for k8s-observer service
+logs-k8s-observer:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f k8s-observer
 
 ## logs-k8s-orchestrator: Tail logs for k8s-orchestrator service
 logs-k8s-orchestrator:
@@ -216,9 +216,9 @@ shell-postgres-init:
 shell-api:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec api /bin/bash
 
-## shell-k8s-trace-bridge: Open a shell in the k8s-trace-bridge container
-shell-k8s-trace-bridge:
-	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec k8s-trace-bridge /bin/bash
+## shell-k8s-observer: Open a shell in the k8s-observer container
+shell-k8s-observer:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec k8s-observer /bin/bash
 
 ## shell-k8s-orchestrator: Open a shell in the k8s-orchestrator container
 shell-k8s-orchestrator:

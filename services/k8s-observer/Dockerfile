@@ -20,7 +20,7 @@ COPY libs/k8s-observability /app/libs/k8s-observability
 RUN pip install --no-cache-dir -e /app/libs/k8s-observability
 
 # Copy service code
-COPY services/k8s-trace-bridge /app/services/k8s-trace-bridge
+COPY services/k8s-observer /app/services/k8s-observer
 
 # Create non-root user for security
 RUN useradd -m -u 1000 opendt && \
@@ -29,6 +29,6 @@ RUN useradd -m -u 1000 opendt && \
 USER opendt
 
 # Set working directory to service for proper module resolution
-WORKDIR /app/services/k8s-trace-bridge
+WORKDIR /app/services/k8s-observer
 
-CMD ["python", "-m", "k8s_trace_bridge.main"]
+CMD ["python", "-m", "k8s_observer.main"]
