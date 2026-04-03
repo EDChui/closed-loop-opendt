@@ -6,11 +6,11 @@ global:
   cpu_frequency_mhz: 2400
 
 services:
-  k8s-trace-bridge:
+  k8s-observer:
     namespace: "exp"
     heartbeat_frequency_minutes: 1
 
-  k8s-decision-maker:
+  k8s-orchestrator:
     refresh_interval_seconds: 120
 
   simulator:

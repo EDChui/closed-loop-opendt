@@ -121,11 +121,11 @@ services:
   # PYTHON MICROSERVICES
   # ============================================================================
 
-  k8s-trace-bridge:
+  k8s-observer:
     build:
       context: .
-      dockerfile: services/k8s-trace-bridge/Dockerfile
-    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-k8s-trace-bridge
+      dockerfile: services/k8s-observer/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-k8s-observer
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
@@ -136,7 +136,7 @@ services:
       DATABASE_URL: postgresql+psycopg://opendt:opendt@postgres:5432/opendt
     volumes:
       # Mount source code for hot reload
-      - ./services/k8s-trace-bridge:/app/services/k8s-trace-bridge
+      - ./services/k8s-observer:/app/services/k8s-observer
       - ./libs/common:/app/libs/common
       - ./libs/k8s-observability:/app/libs/k8s-observability
       # Mount configuration file
@@ -152,13 +152,13 @@ services:
       - opendt-network
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: python -m k8s_trace_bridge.main
+    command: python -m k8s_observer.main
   
-  k8s-decision-maker:
+  k8s-orchestrator:
     build:
       context: .
-      dockerfile: services/k8s-decision-maker/Dockerfile
-    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-k8s-decision-maker
+      dockerfile: services/k8s-orchestrator/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-k8s-orchestrator
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
@@ -167,7 +167,7 @@ services:
       KUBECONFIG: /kube/config
     volumes:
       # Mount source code for hot reload
-      - ./services/k8s-decision-maker:/app/services/k8s-decision-maker
+      - ./services/k8s-orchestrator:/app/services/k8s-orchestrator
       - ./libs/common:/app/libs/common
       - ./libs/k8s-observability:/app/libs/k8s-observability
       # Mount configuration file
@@ -181,7 +181,7 @@ services:
       - opendt-network
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: python -m k8s_decision_maker.main
+    command: python -m k8s_orchestrator.main
 
   simulator:
     build:

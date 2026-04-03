@@ -36,7 +36,7 @@ dev = [
 ]
 
 # Service-specific dependencies (optional, if some services have unique needs)
-k8s-decision-maker = [
+k8s-orchestrator = [
    "aiokafka==0.13.0",
 ]
 simulator = []  # Currently uses only shared dependencies

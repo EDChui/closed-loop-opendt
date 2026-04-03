@@ -5,7 +5,7 @@ __version__ = "0.1.0"
 from odt_common.config import (
     AppConfig,
     CalibratorConfig,
-    K8sTraceBridgeConfig,
+    K8sObserverConfig,
     DynamicConfigEvent,
     GlobalConfig,
     ServicesConfig,
@@ -26,7 +26,7 @@ __all__ = [
     "AppConfig",
     "GlobalConfig",
     "ServicesConfig",
-    "K8sTraceBridgeConfig",
+    "K8sObserverConfig",
     "SimulatorConfig",
     "CalibratorConfig",
     "K8sWorkloadContext",

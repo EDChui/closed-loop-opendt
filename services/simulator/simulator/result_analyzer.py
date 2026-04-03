@@ -1,6 +1,6 @@
 import logging
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 from odt_common.models.simulation import SimulationResult
