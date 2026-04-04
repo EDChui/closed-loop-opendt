@@ -12,6 +12,8 @@ from k8s_observer.prometheus import PrometheusClient, PrometheusResourceCollecto
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_COLLECTOR_FREQUENCY_SECONDS = 15
+
 
 class K8sResourceUsageCollector(BaseWorker):
     def __init__(
@@ -21,7 +23,7 @@ class K8sResourceUsageCollector(BaseWorker):
         resource_type: Literal["pod", "job"],
         prometheus_url: str,
         database_url: str,
-        collector_frequency_seconds: int = 15,
+        collector_frequency_seconds: int = DEFAULT_COLLECTOR_FREQUENCY_SECONDS,
         start_barrier: threading.Barrier | None = None,
     ):
         super().__init__(

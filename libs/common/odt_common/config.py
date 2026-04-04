@@ -61,6 +61,16 @@ class K8sObserverConfig(BaseModel):
         description="Frequency in simulation minutes for workload heartbeat messages",
         gt=0,
     )
+    resource_collector_frequency_seconds: int = Field(
+        default=15,
+        description="Frequency in seconds for collecting resource usage metrics from Prometheus",
+        gt=0,
+    )
+    node_power_frequency_seconds: int = Field(
+        default=15,
+        description="Frequency in seconds for collecting node power readings",
+        gt=0,
+    )
 
 
 class K8sOrchestratorConfig(BaseModel):
@@ -139,10 +149,12 @@ class ServicesConfig(BaseModel):
 class K8sWorkloadContext(BaseModel):
     """Kubernetes-specific workload context"""
 
+    node_names: list[str] = Field(default_factory=list, description="List of node names for scaphandre readings")
     kubeconfig_path: str = Field(default="/kube/config", description="Path to kubeconfig file")
     namespace: str = Field(default="default", description="Kubernetes namespace to monitor")
     resource_type: Literal["pod", "job"] = Field(default="pod", description="Kubernetes resource type to monitor (pod, job)")
     prometheus_url: str = Field(default="http://host.docker.internal:9090", description="URL for Prometheus server to query resource metrics")
+    scaphandre_root: str = Field(default="/hostfs/var/lib/libvirt/scaphandre", description="Root path for Scaphandre energy readings on host filesystem")
     database_url: str = Field(default="postgresql+psycopg://opendt:opendt@postgres:5432/opendt", description="Database connection URL for storing workload metadata")
 
 
