@@ -266,12 +266,14 @@ services:
       RUN_ID: ${RUN_ID}
       DATA_DIR: /app/data
       WORKLOAD_DIR: /app/workload
+      DATABASE_URL: postgresql+psycopg://opendt:opendt@postgres:5432/opendt
     ports:
       - "3001:8000"
     volumes:
       # Mount source code for hot reload
       - ./services/api:/app/services/api
       - ./libs/common:/app/libs/common
+      - ./libs/k8s-observability:/app/libs/k8s-observability
       # Mount configuration file
       - ${CONFIG_PATH:-./config/default.yaml}:/app/config/simulation.yaml:ro
       # Mount data directory for reading simulation results
@@ -281,6 +283,8 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
     networks:
       - opendt-network
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload

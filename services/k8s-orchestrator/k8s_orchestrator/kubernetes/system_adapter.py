@@ -51,8 +51,8 @@ class K8sSystemAdapter(SystemPort):
         cpu_power_model = MseCPUPowerModel(
             modelType="mse",
             power=300,
-            idlePower=50,
-            maxPower=174,
+            idlePower=0.045,
+            maxPower=2,
             calibrationFactor=4
         )
         power_source = PowerSource(carbonTracePath="/app/workload/carbon.parquet")
