@@ -1,5 +1,5 @@
-from k8s_observability.models import K8sTaskRecord, K8sPodRecord, K8sResourceUsageSnapshot
-from k8s_observability.persistence import K8sTaskRecordRow, K8sResourceUsageSnapshotRow
+from k8s_observability.models import K8sTaskRecord, K8sPodRecord, K8sResourceUsageSnapshot, NodePowerReading
+from k8s_observability.persistence import K8sTaskRecordRow, K8sResourceUsageSnapshotRow, NodePowerReadingRow
 
 
 def task_record_to_row(entity: K8sTaskRecord) -> K8sTaskRecordRow:
@@ -65,4 +65,22 @@ def row_to_resource_usage_snapshot(row: K8sResourceUsageSnapshotRow) -> K8sResou
         capture_time=row.capture_time,    # type: ignore
         cpu_usage=row.cpu_usage,          # type: ignore
         mem_usage_mb=row.mem_usage_mb     # type: ignore
+    )
+
+def node_power_reading_to_row(entity: NodePowerReading) -> NodePowerReadingRow:
+    return NodePowerReadingRow(
+        node_name=entity.node_name,
+        capture_time=entity.capture_time,
+        energy_uj=entity.energy_uj,
+        energy_usage_j=entity.energy_usage_j,
+        power_draw_w=entity.power_draw_w,
+    )
+
+def row_to_node_power_reading(row: NodePowerReadingRow) -> NodePowerReading:
+    return NodePowerReading(
+        node_name=row.node_name or "",
+        capture_time=row.capture_time,              # type: ignore[arg-type]
+        energy_uj=row.energy_uj or 0,
+        energy_usage_j=row.energy_usage_j or 0.0,
+        power_draw_w=row.power_draw_w or 0.0,
     )

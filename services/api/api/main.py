@@ -22,6 +22,7 @@ from odt_common.models.topology import (
 )
 from odt_common.utils import get_kafka_producer
 from odt_common.utils.kafka import send_message
+from k8s_observability.persistence import build_engine, test_connection
 
 from api.carbon_query import CarbonDataQuery, CarbonDataResponse
 from api.power_query import PowerDataQuery, PowerDataResponse
@@ -30,6 +31,8 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+DEFAULT_DATABASE_URL = "postgresql+psycopg://opendt:opendt@postgres:5432/opendt"
 
 
 @asynccontextmanager
@@ -54,6 +57,19 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize Kafka producer: {e}")
         app.state.kafka_producer = None
 
+    # Initialize database engine
+    app.state.db_engine = None
+    database_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+    try:
+        app.state.db_engine = build_engine(database_url)
+        if test_connection(app.state.db_engine):
+            logger.info("Database engine initialized")
+        else:
+            logger.warning("Database engine initialized but connectivity check failed")
+    except Exception as exc:
+        logger.error("Failed to initialize database engine: %s", exc)
+        app.state.db_engine = None
+
     yield
 
     # Shutdown
@@ -61,6 +77,9 @@ async def lifespan(app: FastAPI):
     if app.state.kafka_producer:
         app.state.kafka_producer.close()
         logger.info("Kafka producer closed")
+    if app.state.db_engine:
+        app.state.db_engine.dispose()
+        logger.info("Database engine disposed")
 
 
 # Create FastAPI application
@@ -104,11 +123,13 @@ async def health_check():
     """Health check endpoint."""
     kafka_status = "connected" if app.state.kafka_producer else "disconnected"
     config_status = "loaded" if app.state.config else "not loaded"
+    database_status = "connected" if app.state.db_engine else "disconnected"
 
     return {
         "status": "healthy",
         "kafka": kafka_status,
         "config": config_status,
+        "database": database_status,
     }
 
 
@@ -260,11 +281,12 @@ async def get_power_data(
     if not app.state.config:
         raise HTTPException(status_code=500, detail="Configuration not loaded")
 
-    try:
-        # FIXME: Remove workload_context from PowerDataQuery
+    if not app.state.db_engine:
+        raise HTTPException(status_code=500, detail="Database engine not available")
 
+    try:
         # Initialize query
-        query = PowerDataQuery(run_id=run_id, workload_context=None)
+        query = PowerDataQuery(run_id=run_id, db_engine=app.state.db_engine)
 
         # Execute query
         result = query.query(interval_seconds=interval_seconds, start_time=start_time)

@@ -122,7 +122,7 @@ class K8sWorkloadProducer(BaseProducer):
 
             # Fetch the corresponding resource usage snapshots from the database
             usage_snapshots = self.resource_usage_repo.list_by_uid(terminal_metadata.uid)
-            logger.info(f"Captured completed {self.resource_type} {terminal_metadata.uid} with {len(usage_snapshots)} resource usage snapshots ({terminal_metadata.terminal_status})")
+            logger.info(f"📷 Captured completed {self.resource_type} {terminal_metadata.uid} with {len(usage_snapshots)} resource usage snapshots")
 
             # Build Fragments
             fragments = self._convert_usage_snapshots_to_fragments(
@@ -153,8 +153,8 @@ class K8sWorkloadProducer(BaseProducer):
         try:
             while not self.should_stop() and retry_count < MAX_RETRIES:
                 try:
-                    retry_count = 0
                     self._process_stream()
+                    retry_count = 0
                 except Exception as e:
                     logger.error(f"Stream error: {e}", exc_info=True)
                 logger.warning("Terminal metadata stream ended unexpectedly; reconnecting...")

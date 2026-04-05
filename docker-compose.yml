@@ -126,13 +126,16 @@ services:
       context: .
       dockerfile: services/k8s-observer/Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME:-opendt}-k8s-observer
-    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    user: "0:0"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CONFIG_FILE: /app/config.yaml
       PYTHONUNBUFFERED: 1
+      # Environment variables
+      NODE_NAMES: cloud0_echui,cloud1_echui,cloud2_echui
       KUBECONFIG: /kube/config
       PROMETHEUS_URL: http://host.docker.internal:9091
+      SCAPHANDRE_ROOT: /hostfs/var/lib/libvirt/scaphandre
       DATABASE_URL: postgresql+psycopg://opendt:opendt@postgres:5432/opendt
     volumes:
       # Mount source code for hot reload
@@ -143,6 +146,8 @@ services:
       - ${CONFIG_PATH:-./config/default.yaml}:/app/config.yaml:ro
       # Kubeconfig for accessing Kubernetes API
       - ${HOME}/.kube:/kube:ro
+      # Mount host Scaphandre data read-only for VM power monitoring
+      - ${SCAPHANDRE_DATA_DIR:-/var/lib/libvirt/scaphandre}:/hostfs/var/lib/libvirt/scaphandre:ro
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -261,12 +266,14 @@ services:
       RUN_ID: ${RUN_ID}
       DATA_DIR: /app/data
       WORKLOAD_DIR: /app/workload
+      DATABASE_URL: postgresql+psycopg://opendt:opendt@postgres:5432/opendt
     ports:
       - "3001:8000"
     volumes:
       # Mount source code for hot reload
       - ./services/api:/app/services/api
       - ./libs/common:/app/libs/common
+      - ./libs/k8s-observability:/app/libs/k8s-observability
       # Mount configuration file
       - ${CONFIG_PATH:-./config/default.yaml}:/app/config/simulation.yaml:ro
       # Mount data directory for reading simulation results
@@ -276,6 +283,8 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
     networks:
       - opendt-network
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload

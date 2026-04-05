@@ -8,6 +8,8 @@ from typing import Any
 
 import pandas as pd
 from pydantic import BaseModel, Field
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,7 @@ class PowerDataResponse(BaseModel):
 class PowerDataQuery:
     """Query and align power data from simulation and actual consumption."""
     
-    def __init__(self, run_id: str, workload_context: Any):     # TODO: Remove workload_context
+    def __init__(self, run_id: str, db_engine: Engine):
         """Initialize power data query.
 
         Args:
@@ -38,7 +40,7 @@ class PowerDataQuery:
             workload_context: Workload context with resolved paths and metadata
         """
         self.run_id = run_id
-        self.workload_context = workload_context
+        self.db_engine = db_engine
 
         # Get data directory from environment
         data_dir = Path(os.getenv("DATA_DIR", "/app/data"))
@@ -47,17 +49,8 @@ class PowerDataQuery:
         # Path to aggregated simulation results
         self.sim_results_path = self.run_dir / "simulator" / "agg_results.parquet"
 
-        # Path to actual consumption data
-        self.consumption_path = workload_context.consumption_file
-
-        # Path to tasks data (needed for earliest task time)
-        self.tasks_path = workload_context.tasks_file
-
-        workload_name = workload_context.name if workload_context.name else "mounted"
-        logger.info(f"Initialized PowerDataQuery for run {run_id}, workload {workload_name}")
+        logger.info(f"Initialized PowerDataQuery for run {run_id}")
         logger.info(f"Simulation results: {self.sim_results_path}")
-        logger.info(f"Consumption data: {self.consumption_path}")
-        logger.info(f"Tasks data: {self.tasks_path}")
 
     def query(
         self, interval_seconds: int = 60, start_time: datetime | None = None
@@ -83,17 +76,11 @@ class PowerDataQuery:
         logger.info(f"Loaded {len(sim_df)} simulated power records")
 
         # Load actual consumption data
-        if not self.consumption_path.exists():
-            raise FileNotFoundError(f"Consumption data not found: {self.consumption_path}")
-
-        actual_df = pd.read_parquet(self.consumption_path)
+        actual_df = self._load_actual_data(start_time)
         logger.info(f"Loaded {len(actual_df)} actual consumption records")
 
         # Prepare simulated data
         sim_df = self._prepare_simulated_data(sim_df)
-
-        # Prepare actual data
-        actual_df = self._prepare_actual_data(actual_df)
 
         # Filter by start time if provided
         if start_time:
@@ -122,12 +109,9 @@ class PowerDataQuery:
 
         metadata = {
             "run_id": self.run_id,
-            "workload": self.workload_context.name,
             "interval_seconds": interval_seconds,
             "count": len(data_points),
-            "start_time": aligned_df["timestamp"].min().isoformat()
-            if not aligned_df.empty
-            else None,
+            "start_time": aligned_df["timestamp"].min().isoformat() if not aligned_df.empty else None,
             "end_time": aligned_df["timestamp"].max().isoformat() if not aligned_df.empty else None,
         }
 
@@ -162,58 +146,36 @@ class PowerDataQuery:
 
         return result
 
-    def _prepare_actual_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Prepare actual consumption data for alignment.
-
-        Args:
-            df: Raw consumption dataframe
-
-        Returns:
-            Prepared dataframe with timestamp and power_draw columns
-        """
-        # Get earliest task time from tasks.parquet
-        if not self.tasks_path.exists():
-            raise FileNotFoundError(f"Tasks file not found: {self.tasks_path}")
-
-        tasks_df = pd.read_parquet(self.tasks_path)
-        if tasks_df.empty or "submission_time" not in tasks_df.columns:
-            raise ValueError("Tasks data missing or invalid")
-
-        # Get earliest task submission time and convert to milliseconds
-        earliest_task_time = pd.to_datetime(tasks_df["submission_time"].min())
-        earliest_task_time_ms = int(earliest_task_time.timestamp() * 1000)
-        logger.info(
-            f"Earliest task time: {earliest_task_time.isoformat()} ({earliest_task_time_ms}ms)"
+    def _load_actual_data(self, start_time: datetime | None = None) -> pd.DataFrame:
+        query = text(
+            f"""
+            SELECT
+                capture_time AS timestamp,
+                SUM(power_draw_w) AS actual_power
+            FROM node_power_readings
+            {"WHERE capture_time >= :start_time" if start_time else ""}
+            GROUP BY capture_time
+            ORDER BY capture_time
+            """
         )
 
-        # Get consumption offset from workload context
-        offset_ms = self.workload_context.consumption_offset_ms
-        logger.info(f"Consumption offset: {offset_ms}ms")
+        with self.db_engine.connect() as connection:
+            actual_df = pd.read_sql_query(
+                query,
+                connection,
+                params={"start_time": start_time},      # type: ignore
+                parse_dates=["timestamp"],
+            )
 
-        # Convert relative timestamps to absolute timestamps
-        # Formula: absolute_time_ms = earliest_task_time_ms + relative_ms + offset_ms
-        if "timestamp" not in df.columns:
-            raise ValueError("Consumption data missing 'timestamp' column")
+        if actual_df.empty:
+            logger.warning("No actual node power data found in the database")
+            return pd.DataFrame({"timestamp": [], "actual_power": []})
 
-        df["timestamp"] = earliest_task_time_ms + df["timestamp"] + offset_ms
-
-        # Convert from milliseconds to datetime (UTC-aware)
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-        logger.info(f"Converted {len(df)} consumption timestamps to absolute datetime")
-
-        # Use power_draw column
-        if "power_draw" not in df.columns:
-            raise ValueError("Consumption data missing 'power_draw' column")
-
-        # Select and rename relevant columns
-        result = df[["timestamp", "power_draw"]].copy()
-        # Use type: ignore for pandas rename signature mismatch
-        result = result.rename(columns={"power_draw": "actual_power"})  # type: ignore[call-overload]
-
-        # Sort by timestamp
-        result = result.sort_values("timestamp", ignore_index=True)
-
-        return result
+        actual_df["timestamp"] = pd.to_datetime(actual_df["timestamp"], utc=True)
+        actual_df = actual_df.sort_values("timestamp", ignore_index=True)
+        logger.info(f"Loaded {len(actual_df)} aggregated actual power records")
+        
+        return actual_df
 
     def _align_timeseries(
         self, sim_df: pd.DataFrame, actual_df: pd.DataFrame, interval_seconds: int
@@ -228,6 +190,16 @@ class PowerDataQuery:
         Returns:
             Aligned dataframe with both simulated and actual power at each timestamp
         """
+        if sim_df.empty or actual_df.empty:
+            logger.warning("Cannot align timeseries because one input is empty")
+            return pd.DataFrame(
+                {
+                    "timestamp": pd.Series(dtype="datetime64[ns, UTC]"),
+                    "simulated_power": pd.Series(dtype="float64"),
+                    "actual_power": pd.Series(dtype="float64"),
+                }
+            )
+
         # Create common time range (limited by shortest series)
         start_time = max(sim_df["timestamp"].min(), actual_df["timestamp"].min())
         end_time = min(sim_df["timestamp"].max(), actual_df["timestamp"].max())
