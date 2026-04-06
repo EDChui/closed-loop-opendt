@@ -11,7 +11,7 @@ services:
     heartbeat_frequency_minutes: 1
 
   k8s-orchestrator:
-    refresh_interval_seconds: 120
+    refresh_interval_seconds: 45
 
   simulator:
     simulation_frequency_minutes: 5

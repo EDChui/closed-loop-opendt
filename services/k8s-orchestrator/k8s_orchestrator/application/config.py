@@ -8,4 +8,3 @@ class DecisionOrchestratorConfig:
     fetch_timeout_seconds: float = 10.0
     apply_timeout_seconds: float = 10.0
     simulation_guard_window_seconds: float = 10.0
-    seen_reports_retention_seconds: float = 300.0

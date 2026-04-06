@@ -41,7 +41,6 @@ class DecisionOrchestrator:
 
         self.current_state: Optional[ObservedState] = None
         self.pending_batches: dict[str, SimulationBatch] = {}
-        self.seen_reports: dict[str, float] = {}
 
         # Event queue
         self.queue: asyncio.PriorityQueue[QueueItem] = asyncio.PriorityQueue()
@@ -129,7 +128,6 @@ class DecisionOrchestrator:
         logger.info(f"🆕 Refresh cycle completed (cause={cause}): observed new state with ID {observed_state.state_id} and revision {observed_state.revision}")
         self.current_state = observed_state
 
-        self._evict_old_seen_reports()
         self._drop_pending_batches_for_other_states(observed_state.state_id)
 
         await self.state_publisher.publish_system_state(observed_state, cause=cause)
@@ -151,7 +149,6 @@ class DecisionOrchestrator:
         batch = self.pending_batches.get(report.batch_id)
         if batch is None:
             # Ignore reports for batches we didn't know about (might be old/stale)
-            self.seen_reports[report.batch_id] = time.time()
             return
 
         evaluated = self._correlate_proposals(batch, report)
@@ -161,7 +158,6 @@ class DecisionOrchestrator:
             return
 
         decision = self.decision_maker.choose(evaluated, self.current_state.snapshot)
-        self.seen_reports[report.batch_id] = time.time()
         self.pending_batches.pop(report.batch_id, None)
 
         if decision is None:
@@ -178,28 +174,29 @@ class DecisionOrchestrator:
         now_wall = time.time()
         now_mono = time.monotonic()
 
-        # 1. Deduplicate
-        if report.batch_id in self.seen_reports:
-            return True
-
-        # 2. Refresh is happening
+        # 1. Refresh is happening
         if self.refresh_requested.is_set():
+            logger.info(f"🗑️ [1] Dropping simulation report for batch ID {report.batch_id} because a refresh is in progress")
             return True
 
-        # 3. Do not start a decision too close too the next scheduled refresh
+        # 2. Do not start a decision too close too the next scheduled refresh
         if now_mono + self.config.simulation_guard_window_seconds >= self.next_refresh_due_monotonic:
+            logger.info(f"🗑️ [2] Dropping simulation report for batch ID {report.batch_id} because it's too close to the next scheduled refresh")
             return True
 
-        # 4. TTL check
+        # 3. TTL check
         if now_wall - report.created_at > self.config.simulation_ttl_seconds:
+            logger.info(f"🗑️ [3] Dropping simulation report for batch ID {report.batch_id} because it exceeded TTL")
             return True
 
-        # 5. Require initial state to exist
+        # 4. Require initial state to exist
         if self.current_state is None:
+            logger.info(f"🗑️ [4] Dropping simulation report for batch ID {report.batch_id} because no current state is available")
             return True
 
-        # 6. Only process reports based on the current state
+        # 5. Only process reports based on the current state
         if report.based_on_state_id != self.current_state.state_id:
+            logger.info(f"🗑️ [5] Dropping simulation report for batch ID {report.batch_id} because state ID does not match ({report.based_on_state_id} != {self.current_state.state_id})")
             return True
 
         return False
@@ -225,13 +222,6 @@ class DecisionOrchestrator:
         ]
         for batch_id in stale_batch_ids:
             self.pending_batches.pop(batch_id, None)
-
-    def _evict_old_seen_reports(self) -> None:
-        """Evicts entries from the seen_reports dictionary that are older than the configured retention period."""
-        cutoff = time.time() - self.config.seen_reports_retention_seconds
-        stale_ids = [batch_id for batch_id, ts in self.seen_reports.items() if ts < cutoff]
-        for batch_id in stale_ids:
-            del self.seen_reports[batch_id]
 
     @staticmethod
     def _new_state_id() -> str:
