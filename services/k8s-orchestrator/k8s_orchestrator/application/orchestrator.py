@@ -149,6 +149,7 @@ class DecisionOrchestrator:
         batch = self.pending_batches.get(report.batch_id)
         if batch is None:
             # Ignore reports for batches we didn't know about (might be old/stale)
+            logger.warning(f"Received simulation report for unknown batch ID {report.batch_id}, ignoring")
             return
 
         evaluated = self._correlate_proposals(batch, report)
@@ -158,9 +159,9 @@ class DecisionOrchestrator:
             return
 
         decision = self.decision_maker.choose(evaluated, self.current_state.snapshot)
-        self.pending_batches.pop(report.batch_id, None)
 
         if decision is None:
+            logger.warning(f"No decision chosen for batch ID {report.batch_id}, skipping application")
             return
 
         await asyncio.wait_for(
