@@ -10,11 +10,7 @@ logger = logging.getLogger(__name__)
 
 class K8sDecisionMaker(DecisionMaker):
     def __init__(self, policy: DecisionPolicy) -> None:
-        super().__init__()
-        self.policy = policy
-
-    def update_policy(self, policy: DecisionPolicy) -> None:
-        self.policy = policy
+        super().__init__(policy)
 
     def _enabled_objectives(self) -> list[ObjectiveSpec]:
         return [obj for obj in self.policy.objectives.values() if obj.weight > 0]

@@ -11,6 +11,7 @@ from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from odt_common import load_config_from_env
+from odt_common.models import DecisionPolicy, ObjectiveSpec, MetricDirection
 from odt_common.models.topology import (
     CPU,
     Cluster,
@@ -166,8 +167,8 @@ DEFAULT_TOPOLOGY = Topology(
 # Example for OpenAPI docs
 DEFAULT_TOPOLOGY_EXAMPLE = DEFAULT_TOPOLOGY.model_dump(mode="json")
 
+@app.put("/api/topology", deprecated=True)
 
-@app.put("/api/topology")
 async def update_topology(
     topology: Annotated[
         Topology,
@@ -238,6 +239,73 @@ async def update_topology(
         "clusters": len(topology.clusters),
         "total_hosts": topology.total_host_count(),
         "total_cores": topology.total_core_count(),
+        "topic": topic_name,
+    }
+
+# ============================================================================
+# OBJECTIVE WEIGHT MANAGEMENT
+# ============================================================================
+
+DEFAULT_DECISION_POLICY = DecisionPolicy(
+    objectives={
+        "runtime": ObjectiveSpec(name="runtime", weight=1.0, direction=MetricDirection.MIN),
+        "utilization": ObjectiveSpec(name="utilization", weight=0.0, direction=MetricDirection.MAX),
+    }
+)
+
+DEFAULT_DECISION_POLICY_EXAMPLE = DEFAULT_DECISION_POLICY.model_dump(mode="json")
+
+@app.put("/api/objectives")
+async def update_objectives(
+    objectives: Annotated[
+        DecisionPolicy,
+        Body(
+            description="Objectives for decision making",
+            openapi_examples={
+                "default": {
+                    "summary": "Default objectives",
+                    "description": "Default weights: runtime=1, utilization=0",
+                    "value": DEFAULT_DECISION_POLICY_EXAMPLE,
+                }
+            },
+        ),
+    ] = DEFAULT_DECISION_POLICY,
+):
+    # Check if Kafka producer is available
+    if not app.state.kafka_producer:
+        logger.error("Kafka producer not initialized")
+        raise HTTPException(status_code=500, detail="Kafka producer not available")
+
+    # Check if config is loaded (to get topic name)
+    if not app.state.config:
+        logger.error("Configuration not loaded")
+        raise HTTPException(status_code=500, detail="Configuration not loaded")
+    
+    # Get sim.topology topic name from config
+    objectives_topic = app.state.config.kafka.topics.get("objectives")
+    if not objectives_topic:
+        logger.error("dc.objectives topic not configured")
+        raise HTTPException(status_code=500, detail="dc.objectives topic not configured")
+
+    topic_name = objectives_topic.name
+
+    # Publish to dc.objectives Kafka topic with compacted key
+    try:
+        send_message(
+            producer=app.state.kafka_producer,
+            topic=topic_name,
+            message=objectives.model_dump(mode="json"),
+            key="objectives",
+        )
+        logger.info(f"Objectives published to {topic_name}")
+    except Exception as e:
+        logger.error(f"Failed to publish objectives to Kafka: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to publish objectives: {e}") from e
+    
+    return {
+        "status": "updated",
+        "message": f"Objective weights published to {topic_name}",
+        "objectives": objectives.model_dump(),
         "topic": topic_name,
     }
 

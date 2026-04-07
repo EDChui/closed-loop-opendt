@@ -9,10 +9,11 @@ from odt_common.models import (
     SimulationBatch,
     SimulationBatchReport,
     EvaluatedProposal,
+    DecisionPolicy
 )
 from k8s_orchestrator.application.config import DecisionOrchestratorConfig
-from k8s_orchestrator.application.events import Event, Priority, QueueItem, RefreshTick
-from k8s_orchestrator.application.ports import SystemPort, SimulationGateway, StatePublisher
+from k8s_orchestrator.application.events import Event, Priority, QueueItem, RefreshTick, ConfigChange
+from k8s_orchestrator.application.ports import SystemPort, SimulationGateway, StatePublisher, RuntimeConfigGateway
 from k8s_orchestrator.domain import (
     DecisionMaker,
     ObservedState,
@@ -30,6 +31,7 @@ class DecisionOrchestrator:
         decision_maker: DecisionMaker,
         state_publisher: StatePublisher,
         simulation_gateway: SimulationGateway,
+        runtime_config_gateway: RuntimeConfigGateway,
         config: DecisionOrchestratorConfig,
     ):
         self.real_system = real_system
@@ -37,6 +39,7 @@ class DecisionOrchestrator:
         self.decision_maker = decision_maker
         self.state_publisher = state_publisher
         self.simulation_gateway = simulation_gateway
+        self.runtime_config_gateway = runtime_config_gateway
         self.config = config
 
         self.current_state: Optional[ObservedState] = None
@@ -49,6 +52,10 @@ class DecisionOrchestrator:
         self.refresh_requested = asyncio.Event()
         self.next_refresh_due_monotonic = time.monotonic() + self.config.refresh_interval_seconds
 
+    @staticmethod
+    def _new_state_id() -> str:
+        return str(uuid.uuid4())
+
     async def run(self) -> None:
         logger.info("Running DecisionOrchestrator")
         await self._refresh_cycle("startup")
@@ -56,6 +63,7 @@ class DecisionOrchestrator:
         async with asyncio.TaskGroup() as tg:
             tg.create_task(self._refresh_scheduler())
             tg.create_task(self._simulation_reader())
+            tg.create_task(self._runtime_config_watcher())
             tg.create_task(self._event_loop())
 
     async def _enqueue(self, priority: Priority, event: Event) -> None:
@@ -82,6 +90,10 @@ class DecisionOrchestrator:
         async for report in self.simulation_gateway:
             await self._enqueue(Priority.SIMULATION, report)
 
+    async def _runtime_config_watcher(self) -> None:
+        async for new_config in self.runtime_config_gateway:
+            await self._enqueue(Priority.CONFIG, new_config)
+
     async def _event_loop(self) -> None:
         """Main event loop that processes incoming events based on priority."""
         while True:
@@ -93,6 +105,8 @@ class DecisionOrchestrator:
                     await self._handle_refresh(event)
                 elif isinstance(event, SimulationBatchReport):
                     await self._handle_simulation_report(event)
+                elif isinstance(event, ConfigChange):
+                    await self._handle_config_change(event)
             except TimeoutError as e:
                 logger.error(f"Timeout while processing event: {e}", exc_info=True)
             except Exception as e:
@@ -141,13 +155,23 @@ class DecisionOrchestrator:
         batch = self.proposal_generator.generate(observed_state)
         self.pending_batches[batch.batch_id] = batch
         await self.simulation_gateway.submit_batch(batch)
+    
+    def _drop_pending_batches_for_other_states(self, state_id: str) -> None:
+        """Removes pending batches that are based on a different state ID than the current one."""
+        stale_batch_ids = [
+            batch_id
+            for batch_id, batch in self.pending_batches.items()
+            if batch.based_on_state_id != state_id
+        ]
+        for batch_id in stale_batch_ids:
+            self.pending_batches.pop(batch_id, None)
 
     # ============================
     # Handle simulation report
     # ============================
 
     async def _handle_simulation_report(self, report: SimulationBatchReport) -> None:
-        logger.info(f"Received simulation report for batch ID {report.batch_id} based on state ID {report.based_on_state_id}")
+        logger.info(f"📡 Received simulation report for batch ID {report.batch_id} based on state ID {report.based_on_state_id}")
         if self._should_drop_report(report):
             return
 
@@ -224,17 +248,12 @@ class DecisionOrchestrator:
             evaluated.append(EvaluatedProposal(proposal=proposal, outcome=outcome))
 
         return evaluated
+    
+    # ============================
+    # Handle config change
+    # ============================
 
-    def _drop_pending_batches_for_other_states(self, state_id: str) -> None:
-        """Removes pending batches that are based on a different state ID than the current one."""
-        stale_batch_ids = [
-            batch_id
-            for batch_id, batch in self.pending_batches.items()
-            if batch.based_on_state_id != state_id
-        ]
-        for batch_id in stale_batch_ids:
-            self.pending_batches.pop(batch_id, None)
-
-    @staticmethod
-    def _new_state_id() -> str:
-        return str(uuid.uuid4())
+    async def _handle_config_change(self, new_config: ConfigChange) -> None:
+        if isinstance(new_config, DecisionPolicy):
+            logger.info(f"📡 Received new decision policy config: {new_config}")
+            self.decision_maker.update_policy(new_config)

@@ -2,7 +2,7 @@ import enum
 from dataclasses import dataclass, field
 from typing import Literal, Union
 
-from odt_common.models import SimulationBatchReport
+from odt_common.models import SimulationBatchReport, DecisionPolicy
 
 
 @dataclass(frozen=True)
@@ -10,12 +10,15 @@ class RefreshTick:
     reason: Literal["startup", "periodic", "post_apply", "manual"]
     scheduled_at_monotonic: float
 
+# Temporarily aliasing ConfigChanged to DecisionPolicy for simplicity
+ConfigChange = DecisionPolicy
 
-Event = Union[RefreshTick, SimulationBatchReport]
+Event = Union[RefreshTick, SimulationBatchReport, ConfigChange]
 
 
 class Priority(enum.IntEnum):
     REFRESH = 0
+    CONFIG = 5
     SIMULATION = 10
 
 

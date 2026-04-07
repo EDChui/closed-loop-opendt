@@ -11,6 +11,7 @@ from k8s_orchestrator.kubernetes.system_adapter import K8sSystemAdapter
 from k8s_orchestrator.domain.kubernetes import K8sProposalGenerator, K8sDecisionMaker
 from k8s_orchestrator.kafka.state_publisher import KafkaStatePublisher
 from k8s_orchestrator.kafka.simulation_gateway import KafkaSimulationGateway
+from k8s_orchestrator.kafka.runtime_config_gateway import KafkaRuntimeConfigGateway
 
 
 logging.basicConfig(
@@ -35,6 +36,7 @@ async def main() -> None:
     topology_topic = config.kafka.topics["topology"].name
     sim_batch_topic = config.kafka.topics["sim_batch"].name
     sim_batch_report_topic = config.kafka.topics["sim_batch_report"].name
+    objectives_topic = config.kafka.topics["objectives"].name
     
     logger.info(f"Kafka bootstrap servers: {kafka_bootstrap_servers}")
     logger.info(f"Topology topic: {topology_topic}")
@@ -85,10 +87,16 @@ async def main() -> None:
         sim_batch_report_topic=sim_batch_report_topic,
         consumer_group=consumer_group
     )
+    runtime_config_gateway = KafkaRuntimeConfigGateway(
+        kafka_bootstrap_servers=kafka_bootstrap_servers,
+        objectives_topic=objectives_topic,
+        consumer_group=consumer_group
+    )
 
     # Start components that require async startup
     await state_publisher.start()
     await simulation_gateway.start()
+    await runtime_config_gateway.start()
 
     decision_orchestrator = DecisionOrchestrator(
         real_system=system_adapter,
@@ -96,6 +104,7 @@ async def main() -> None:
         decision_maker=decision_maker,
         state_publisher=state_publisher,
         simulation_gateway=simulation_gateway,
+        runtime_config_gateway=runtime_config_gateway,
         config=orchestrator_config
     )
 
@@ -106,6 +115,7 @@ async def main() -> None:
     finally:
         await state_publisher.stop()
         await simulation_gateway.stop()
+        await runtime_config_gateway.stop()
         logger.info("Kubernetes Orchestrator service stopped")
 
 

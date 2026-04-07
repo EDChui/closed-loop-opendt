@@ -1,10 +1,7 @@
 import logging
 import json
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
-from dataclasses import asdict, is_dataclass
 from typing import AsyncIterator, Optional
-
-from sqlalchemy import Enum
 
 from odt_common.models import SimulationBatch, SimulationBatchReport
 from k8s_orchestrator.application.ports import SimulationGateway
