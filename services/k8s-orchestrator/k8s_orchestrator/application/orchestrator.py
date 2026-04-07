@@ -85,13 +85,18 @@ class DecisionOrchestrator:
     async def _event_loop(self) -> None:
         """Main event loop that processes incoming events based on priority."""
         while True:
-            item = await self.queue.get()
-            event = item.event
+            try:
+                item = await self.queue.get()
+                event = item.event
 
-            if isinstance(event, RefreshTick):
-                await self._handle_refresh(event)
-            elif isinstance(event, SimulationBatchReport):
-                await self._handle_simulation_report(event)
+                if isinstance(event, RefreshTick):
+                    await self._handle_refresh(event)
+                elif isinstance(event, SimulationBatchReport):
+                    await self._handle_simulation_report(event)
+            except TimeoutError as e:
+                logger.error(f"Timeout while processing event: {e}", exc_info=True)
+            except Exception as e:
+                logger.error(f"Error processing event: {e}", exc_info=True)
 
     # ============================
     # Handle refresh event
@@ -164,10 +169,16 @@ class DecisionOrchestrator:
             logger.warning(f"No decision chosen for batch ID {report.batch_id}, skipping application")
             return
 
-        await asyncio.wait_for(
-            self.real_system.apply_decision(decision),
-            timeout=self.config.apply_timeout_seconds,
-        )
+        try:
+            await asyncio.wait_for(
+                self.real_system.apply_decision(decision),
+                timeout=self.config.apply_timeout_seconds,
+            )
+        except TimeoutError as e:
+            logger.error(f"Timeout while applying decision for batch ID {report.batch_id}: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Error while applying decision for batch ID {report.batch_id}: {e}", exc_info=True)
+
         # Always re-read real state after acting
         await self._refresh_cycle(cause=f"post-apply:{decision.action}")
 

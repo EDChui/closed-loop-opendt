@@ -11,11 +11,3 @@ class Decision(BaseModel):
         default=None,
         description="Optional action-specific metadata or parameters",
     )
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "action": "scale_up",
-                "details": {"target_replicas": 3},
-            }
-        }

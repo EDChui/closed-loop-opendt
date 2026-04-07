@@ -231,10 +231,7 @@ class SimulationService:
         try:
             metadata_file = proposal_dir / "metadata.json"
             metadata = json.loads(metadata_file.read_text())
-            metadata["simulation_result"] = {
-                "runtime": str(simulation_result.runtime),
-                "utilization": simulation_result.utilization,
-            }
+            metadata["simulation_result"] = simulation_result.model_dump(mode="json")
             metadata_file.write_text(json.dumps(metadata, indent=2))
             logger.debug(f"Updated simulation result metadata for proposal in {proposal_dir}")
         except Exception as e:
@@ -249,7 +246,6 @@ class SimulationService:
                 batch_id="unknown",
                 based_on_state_id="unknown",
                 created_at=time.time(),
-                received_at=self.sim_batch_received_at if self.sim_batch_received_at else time.time(),
                 outcomes=outcomes
             )
         
@@ -270,7 +266,6 @@ class SimulationService:
             batch_id=self.sim_batch.batch_id,
             based_on_state_id=self.sim_batch.based_on_state_id,
             created_at=time.time(),
-            received_at=self.sim_batch_received_at if self.sim_batch_received_at else time.time(),
             outcomes=outcomes
         )
 
@@ -431,13 +426,8 @@ class SimulationService:
 
     def _publish_simulation_batch_report(self, sim_batch_report: SimulationBatchReport) -> None:        
         logger.info(f"Publishing simulation batch report for batch {sim_batch_report.batch_id} with {len(sim_batch_report.outcomes)} outcomes")
-
         for outcome in sim_batch_report.outcomes:
-            logger.info(
-                f"   Proposal {outcome.proposal_id}: "
-                f"Runtime={outcome.result.runtime}, "
-                f"Utilization={outcome.result.utilization}"
-            )
+            logger.info(f"   Proposal {outcome.proposal_id}: {outcome.model_dump(mode='json')}")
 
         try:
             report_data = sim_batch_report.model_dump(mode="json")

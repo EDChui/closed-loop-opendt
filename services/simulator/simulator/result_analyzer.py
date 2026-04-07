@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import timedelta
 from pathlib import Path
 
-from odt_common.models.simulation import SimulationResult
+from odt_common.models.simulation import SimulationMetric, SimulationResult
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,12 @@ class SimulationResultAnalyzer:
         runtime = self.get_runtime(df_service)
         utilization = self.get_utilization(df_host)
 
+        runtime_seconds = runtime.total_seconds() if runtime is not None else 0.0
+        utilization_ratio = utilization if utilization is not None else 0.0
+
         return SimulationResult(
-            runtime=runtime,
-            utilization=utilization,
+            metrics={
+                "runtime": SimulationMetric(value=runtime_seconds, unit="seconds"),
+                "utilization": SimulationMetric(value=utilization_ratio, unit="ratio"),
+            }
         )

@@ -3,6 +3,7 @@ import logging
 import os
 
 from odt_common import load_config_from_env
+from odt_common.models import DecisionPolicy, ObjectiveSpec, MetricDirection
 from odt_common.utils import get_kafka_bootstrap_servers
 from k8s_orchestrator.application.config import DecisionOrchestratorConfig
 from k8s_orchestrator.application.orchestrator import DecisionOrchestrator
@@ -49,6 +50,13 @@ async def main() -> None:
     # Get config settings
     cpu_frequency_mhz = config.global_config.cpu_frequency_mhz
     refresh_interval_seconds = config.services.k8s_orchestrator.refresh_interval_seconds
+    # TODO: Make the initial policy configurable
+    initial_policy = DecisionPolicy(
+        objectives={
+            "runtime": ObjectiveSpec(name="runtime", weight=1.0, direction=MetricDirection.MIN),
+            "utilization": ObjectiveSpec(name="utilization", weight=0.0, direction=MetricDirection.MAX),
+        }
+    )
 
     logger.info(f"CPU frequency (MHz): {cpu_frequency_mhz}")
     logger.info(f"Refresh interval (seconds): {refresh_interval_seconds}")
@@ -64,7 +72,9 @@ async def main() -> None:
         cpu_frequency_mhz=cpu_frequency_mhz
     )
     proposal_generator = K8sProposalGenerator()
-    decision_maker = K8sDecisionMaker()
+    decision_maker = K8sDecisionMaker(
+        policy=initial_policy
+    )
     state_publisher = KafkaStatePublisher(
         kafka_bootstrap_servers=kafka_bootstrap_servers,
         topology_topic=topology_topic
