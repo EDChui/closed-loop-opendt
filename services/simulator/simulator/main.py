@@ -427,7 +427,7 @@ class SimulationService:
     def _publish_simulation_batch_report(self, sim_batch_report: SimulationBatchReport) -> None:        
         logger.info(f"Publishing simulation batch report for batch {sim_batch_report.batch_id} with {len(sim_batch_report.outcomes)} outcomes")
         for outcome in sim_batch_report.outcomes:
-            logger.info(f"   Proposal {outcome.proposal_id}: {outcome.model_dump(mode='json')}")
+            logger.info(f"   Proposal {outcome.proposal_id}: {outcome.result}")
 
         try:
             report_data = sim_batch_report.model_dump(mode="json")

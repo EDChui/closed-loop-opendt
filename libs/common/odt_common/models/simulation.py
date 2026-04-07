@@ -15,6 +15,10 @@ class SimulationResult(BaseModel):
     def get_metric(self, name: str) -> float | None:
         metric = self.metrics.get(name)
         return None if metric is None else metric.value
+    
+    def __str__(self) -> str:
+        metric_strs = [f"{name}={metric.value}{f' {metric.unit}' if metric.unit else ''}" for name, metric in self.metrics.items()]
+        return ", ".join(metric_strs) if metric_strs else "No metrics"
 
 
 class ProposalOutcome(BaseModel):
