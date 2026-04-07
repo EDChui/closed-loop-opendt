@@ -3,6 +3,7 @@ import asyncio
 import itertools
 import time
 import uuid
+from enum import Enum, auto
 from typing import Optional
 
 from odt_common.models import (
@@ -21,6 +22,12 @@ from k8s_orchestrator.domain import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class ReportDisposition(Enum):
+    PROCESS = auto()
+    DROP = auto()
+    REQUEUE = auto()
 
 
 class DecisionOrchestrator:
@@ -89,6 +96,12 @@ class DecisionOrchestrator:
         """Continuously reads simulation reports and enqueues them for processing."""
         async for report in self.simulation_gateway:
             await self._enqueue(Priority.SIMULATION, report)
+
+    async def _schedule_report_retry(self, report: SimulationBatchReport, delay: float) -> None:
+        async def _delayed():
+            await asyncio.sleep(delay)
+            await self._enqueue(Priority.SIMULATION, report)
+        asyncio.create_task(_delayed())
 
     async def _runtime_config_watcher(self) -> None:
         async for new_config in self.runtime_config_gateway:
@@ -172,7 +185,15 @@ class DecisionOrchestrator:
 
     async def _handle_simulation_report(self, report: SimulationBatchReport) -> None:
         logger.info(f"📡 Received simulation report for batch ID {report.batch_id} based on state ID {report.based_on_state_id}")
-        if self._should_drop_report(report):
+        
+        # Handle drops/requeues
+        disposition, delay = self._classify_report(report)
+        if disposition == ReportDisposition.DROP:
+            return
+        elif disposition == ReportDisposition.REQUEUE:
+            if delay is None:
+                delay = self.config.simulation_requeue_delay_seconds
+            await self._schedule_report_retry(report, delay)
             return
 
         batch = self.pending_batches.get(report.batch_id)
@@ -206,36 +227,39 @@ class DecisionOrchestrator:
         # Always re-read real state after acting
         await self._refresh_cycle(cause=f"post-apply:{decision.action}")
 
-    def _should_drop_report(self, report: SimulationBatchReport) -> bool:
+    def _classify_report(self, report: SimulationBatchReport) -> tuple[ReportDisposition, float | None]:
         now_wall = time.time()
         now_mono = time.monotonic()
 
-        # 1. Refresh is happening
-        if self.refresh_requested.is_set():
-            logger.info(f"🗑️ [1] Dropping simulation report for batch ID {report.batch_id} because a refresh is in progress")
-            return True
-
-        # 2. Do not start a decision too close too the next scheduled refresh
-        if now_mono + self.config.simulation_guard_window_seconds >= self.next_refresh_due_monotonic:
-            logger.info(f"🗑️ [2] Dropping simulation report for batch ID {report.batch_id} because it's too close to the next scheduled refresh")
-            return True
-
-        # 3. TTL check
+        # Hard drops
+        # 1. TTL check
         if now_wall - report.created_at > self.config.simulation_ttl_seconds:
-            logger.info(f"🗑️ [3] Dropping simulation report for batch ID {report.batch_id} because it exceeded TTL")
-            return True
-
-        # 4. Require initial state to exist
+            logger.info(f"🗑️ [1] DROP simulation report for batch ID {report.batch_id} - TTL exceed")
+            return ReportDisposition.DROP, None
+        
+        # 2. Require initial state to exist
         if self.current_state is None:
-            logger.info(f"🗑️ [4] Dropping simulation report for batch ID {report.batch_id} because no current state is available")
-            return True
-
-        # 5. Only process reports based on the current state
+            logger.info(f"🗑️ [2] DROP simulation report for batch ID {report.batch_id} - no current state is available")
+            return ReportDisposition.DROP, None
+        
+        # 3. Only process reports based on the current state
         if report.based_on_state_id != self.current_state.state_id:
-            logger.info(f"🗑️ [5] Dropping simulation report for batch ID {report.batch_id} because state ID does not match ({report.based_on_state_id} != {self.current_state.state_id})")
-            return True
+            logger.info(f"🗑️ [3] DROP simulation report for batch ID {report.batch_id} - state ID does not match ({report.based_on_state_id} != {self.current_state.state_id})")
+            return ReportDisposition.DROP, None
+        
+        # Soft drops
+        # 4. Refresh is happening
+        if self.refresh_requested.is_set():
+            logger.info(f"🔄 [4] REQUEUE simulation report for batch ID {report.batch_id} - refresh is in progress")
+            return ReportDisposition.REQUEUE, self.config.simulation_requeue_delay_seconds
 
-        return False
+        # 5. Do not start a decision too close too the next scheduled refresh
+        if now_mono + self.config.simulation_guard_window_seconds >= self.next_refresh_due_monotonic:
+            logger.info(f"🔄 [5] REQUEUE simulation report for batch ID {report.batch_id} - too close to the next scheduled refresh")
+            delay = max(self.config.simulation_requeue_delay_seconds, self.next_refresh_due_monotonic - now_mono + self.config.simulation_requeue_delay_seconds)
+            return ReportDisposition.REQUEUE, delay
+
+        return ReportDisposition.PROCESS, None
 
     def _correlate_proposals(self, batch: SimulationBatch, report: SimulationBatchReport) -> list[EvaluatedProposal]:
         proposals_by_id = {proposal.proposal_id: proposal for proposal in batch.proposals}
