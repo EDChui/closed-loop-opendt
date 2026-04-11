@@ -237,7 +237,12 @@ class SimulationService:
         except Exception as e:
             logger.error(f"Failed to update simulation result metadata: {e}", exc_info=True)
 
-    def _analyze_and_create_simulation_batch_report(self, proposal_execution_results: list[ProposalExecutionResult]) -> SimulationBatchReport:
+    def _analyze_and_create_simulation_batch_report(
+        self,
+        proposal_execution_results: list[ProposalExecutionResult],
+        last_processed_time: datetime | None,
+        aligned_simulated_time: datetime | None,
+    ) -> SimulationBatchReport:
         outcomes = []
 
         if self.sim_batch is None:
@@ -254,7 +259,7 @@ class SimulationService:
                 logger.warning(f"No output directory for proposal {execution_result.proposal_id}, skipping result analysis")
                 continue
 
-            result = self.result_analyzer.analyze_result(execution_result.output_dir)
+            result = self.result_analyzer.analyze_result(execution_result.output_dir, last_processed_time, aligned_simulated_time)
             self._update_simulation_result_metadata(execution_result.proposal_dir, result)
             outcome = ProposalOutcome(
                 proposal_id=execution_result.proposal_id,
@@ -324,6 +329,7 @@ class SimulationService:
             output_dir = baseline_result.output_dir
             was_cached = baseline_result.cached
             try:
+                last_processed_time = self.result_processor.get_last_processed_time()
                 self.result_processor.process_simulation_results(
                     run_number=self.run_number,
                     output_dir=output_dir,
@@ -338,7 +344,7 @@ class SimulationService:
         self.task_accumulator.last_simulation_time = aligned_simulated_time
 
         # Process and publish simulation batch report to Kafka
-        sim_batch_report = self._analyze_and_create_simulation_batch_report(proposal_execution_results)
+        sim_batch_report = self._analyze_and_create_simulation_batch_report(proposal_execution_results, last_processed_time, aligned_simulated_time)
         self._publish_simulation_batch_report(sim_batch_report)
 
         logger.info(
