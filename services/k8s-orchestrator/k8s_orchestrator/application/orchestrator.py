@@ -278,6 +278,5 @@ class DecisionOrchestrator:
     # ============================
 
     async def _handle_config_change(self, new_config: ConfigChange) -> None:
-        if isinstance(new_config, DecisionPolicy):
-            logger.info(f"📡 Received new decision policy config: {new_config}")
-            self.decision_maker.update_policy(new_config)
+        logger.info(f"📡 Received new decision policy config: {new_config.new_policy}")
+        self.decision_maker.update_policy(new_config.new_policy)

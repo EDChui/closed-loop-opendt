@@ -1,9 +1,9 @@
 import logging
 import json
-from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
+from aiokafka import AIOKafkaConsumer
 from typing import AsyncIterator, Optional
 
-from odt_common.models import DecisionPolicy
+from odt_common.models import DecisionPolicy, WeightedDecisionPolicy, RankedDecisionPolicy
 from k8s_orchestrator.application.events import ConfigChange
 from k8s_orchestrator.application.ports import RuntimeConfigGateway
 
@@ -46,7 +46,7 @@ class KafkaRuntimeConfigGateway(RuntimeConfigGateway):
     def __aiter__(self) -> AsyncIterator[ConfigChange]:
         return self._iter_decision_policies()
 
-    async def _iter_decision_policies(self) -> AsyncIterator[DecisionPolicy]:
+    async def _iter_decision_policies(self) -> AsyncIterator[ConfigChange]:
         if not self._started:
             raise RuntimeError("KafkaRuntimeConfigGateway must be started before iterating")
         
@@ -57,7 +57,7 @@ class KafkaRuntimeConfigGateway(RuntimeConfigGateway):
                     logger.warning("Received empty decision policy, skipping")
                     continue
                 logger.info(f"Received new decision policy")
-                yield decision_policy
+                yield ConfigChange(new_policy=decision_policy)
             except Exception as e:
                 logger.error(f"Error processing message: {e}")
 
@@ -66,4 +66,9 @@ class KafkaRuntimeConfigGateway(RuntimeConfigGateway):
         if raw is None:
             return None
         data = json.loads(raw.decode("utf-8"))
-        return DecisionPolicy.model_validate(data)
+
+        if data.get("policy_type") == "weighted":
+            return WeightedDecisionPolicy.model_validate(data)
+        elif data.get("policy_type") == "ranked":
+            return RankedDecisionPolicy.model_validate(data)
+        raise ValueError(f"Unknown decision policy type: {data.get('policy_type')}")
