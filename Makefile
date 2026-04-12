@@ -1,4 +1,4 @@
-.PHONY: up down clean-volumes help test setup clean-env lint
+.PHONY: up down export-db clean-volumes help test setup clean-env lint
 
 # Default target
 .DEFAULT_GOAL := help
@@ -13,6 +13,10 @@ config ?= ./config/default.yaml
 # Build flag - set to 'true' to rebuild images without cache
 # Usage: make up build=true
 build ?= false
+
+# Database export flag - set to 'false' to skip export during shutdown
+# Usage: make down export_db=false
+export_db ?= true
 
 # Virtual environment detection
 VENV := .venv
@@ -57,9 +61,15 @@ up: clean-volumes
 	@echo "View logs with: make logs-<service>"
 	@echo ""
 
-## down: Stop all containers
+## down: Export database to Parquet, then stop all containers
 down:
 	@echo ""
+	@if [ "$(export_db)" = "true" ]; then \
+		echo "Exporting PostgreSQL data to Parquet before shutdown..."; \
+		$(MAKE) export-db; \
+	else \
+		echo "Skipping PostgreSQL export (export_db=false)."; \
+	fi
 	@echo "Stopping OpenDT services..."
 	@RUN_ID=$$(cat .run_id 2>/dev/null || true); \
 	if [ -n "$$RUN_ID" ] && [ -f "data/$$RUN_ID/.env" ]; then \
@@ -69,6 +79,31 @@ down:
 	fi
 	@echo "Done."
 	@echo ""
+
+## export-db: Save PostgreSQL public schema tables as Parquet files
+export-db:
+	@RUN_ID=$$(cat .run_id 2>/dev/null || true); \
+	if [ -z "$$RUN_ID" ]; then \
+		echo "No .run_id found. Skipping database export."; \
+		exit 0; \
+	fi; \
+	OUTPUT_DIR="data/$$RUN_ID/postgres"; \
+	mkdir -p "$$OUTPUT_DIR"; \
+	DB_URL="postgresql+psycopg://opendt:opendt@localhost:5433/opendt"; \
+	PROFILE_FLAG_VALUE=""; \
+	if [ -f "data/$$RUN_ID/.env" ]; then \
+		set -a; \
+		. ./data/$$RUN_ID/.env; \
+		set +a; \
+		DB_URL="$${DATABASE_URL:-$$DB_URL}"; \
+		PROFILE_FLAG_VALUE="$$PROFILE_FLAG"; \
+	fi; \
+	echo "Export directory: $$OUTPUT_DIR"; \
+	if ! docker compose $$PROFILE_FLAG_VALUE ps --status running --services | grep -qx "postgres"; then \
+		echo "Error: postgres container is not running, cannot export database."; \
+		exit 1; \
+	fi; \
+	$(PYTHON) scripts/export_db_to_parquet.py --run-id "$$RUN_ID" --database-url "$$DB_URL" --output-dir "$$OUTPUT_DIR"
 
 ## clean-volumes: Stop containers and delete all persistent volumes
 clean-volumes:
