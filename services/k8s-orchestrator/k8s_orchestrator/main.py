@@ -3,7 +3,7 @@ import logging
 import os
 
 from odt_common import load_config_from_env
-from odt_common.models import DecisionPolicy, ObjectiveSpec, MetricDirection
+from odt_common.models import MetricDirection, RankedDecisionPolicy, RankedObjectiveSpec
 from odt_common.utils import get_kafka_bootstrap_servers
 from k8s_orchestrator.application.config import DecisionOrchestratorConfig
 from k8s_orchestrator.application.orchestrator import DecisionOrchestrator
@@ -53,10 +53,12 @@ async def main() -> None:
     cpu_frequency_mhz = config.global_config.cpu_frequency_mhz
     refresh_interval_seconds = config.services.k8s_orchestrator.refresh_interval_seconds
     # TODO: Make the initial policy configurable
-    initial_policy = DecisionPolicy(
+    initial_policy = RankedDecisionPolicy(
+        policy_type="ranked",
         objectives={
-            "runtime": ObjectiveSpec(name="runtime", weight=1.0, direction=MetricDirection.MIN),
-            "utilization": ObjectiveSpec(name="utilization", weight=0.0, direction=MetricDirection.MAX),
+            "runtime": RankedObjectiveSpec(name="runtime", direction=MetricDirection.MIN, priority=1, tie_tolerance=30.0),
+            "utilization": RankedObjectiveSpec(name="utilization", direction=MetricDirection.MAX, priority=2, tie_tolerance=0.05),
+            "power": RankedObjectiveSpec(name="power", direction=MetricDirection.MIN, priority=3, tie_tolerance=0.0),
         }
     )
 

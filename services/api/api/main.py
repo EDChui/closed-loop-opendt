@@ -11,7 +11,7 @@ from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from odt_common import load_config_from_env
-from odt_common.models import DecisionPolicy, ObjectiveSpec, MetricDirection
+from odt_common.models import DecisionPolicy, MetricDirection, RankedDecisionPolicy, RankedObjectiveSpec
 from odt_common.models.topology import (
     CPU,
     Cluster,
@@ -246,10 +246,12 @@ async def update_topology(
 # OBJECTIVE WEIGHT MANAGEMENT
 # ============================================================================
 
-DEFAULT_DECISION_POLICY = DecisionPolicy(
+DEFAULT_DECISION_POLICY = RankedDecisionPolicy(
+    policy_type="ranked",
     objectives={
-        "runtime": ObjectiveSpec(name="runtime", weight=1.0, direction=MetricDirection.MIN),
-        "utilization": ObjectiveSpec(name="utilization", weight=0.0, direction=MetricDirection.MAX),
+        "runtime": RankedObjectiveSpec(name="runtime", direction=MetricDirection.MIN, priority=1, tie_tolerance=30.0),
+        "utilization": RankedObjectiveSpec(name="utilization", direction=MetricDirection.MAX, priority=2, tie_tolerance=0.05),
+        "power": RankedObjectiveSpec(name="power", direction=MetricDirection.MIN, priority=3, tie_tolerance=0.0),
     }
 )
 
