@@ -3,16 +3,18 @@
 global:
   speed_factor: 1 # 1.0 = Realtime, -1 = Max Speed
   calibration_enabled: false
+  cpu_frequency_mhz: 2400
 
 services:
-  k8s-trace-bridge:
+  k8s-observer:
     namespace: "exp"
     heartbeat_frequency_minutes: 1
-    cpu_frequency_mhz: 2400
+
+  k8s-orchestrator:
+    refresh_interval_seconds: 47
 
   simulator:
     simulation_frequency_minutes: 5
-    background_load_nodes: 0
 
 kafka:
   topics:
@@ -33,17 +35,33 @@ kafka:
         cleanup.policy: "compact"
         # Keep at least 1 hour
         min.compaction.lag.ms: "3600000"
+    objectives:
+      name: "dc.objectives"
+      config:
+        cleanup.policy: "compact"
+        min.compaction.lag.ms: "0"
     system:
+      # TODO: Remove? Actual usage unknown
       name: "sys.config"
       config:
         cleanup.policy: "compact"
     sim_topology:
+      # TODO: Rename to calibration_topic for clarity
       name: "sim.topology"
       config:
         # Compacted topic - keeps latest simulated topology
         cleanup.policy: "compact"
         min.compaction.lag.ms: "0"
+    sim_batch:
+      name: "sim.batch"
+      config:
+        retention.ms: "300000" # 5 minutes retention for simulation batches
+    sim_batch_report:
+      name: "sim.batch.report"
+      config:
+        retention.ms: "600000" # 10 minutes retention for simulation batch reports
     results:
+      # TODO: Remove? Actual usage unknown
       name: "sim.results"
       config:
         # 7 days retention for simulation results

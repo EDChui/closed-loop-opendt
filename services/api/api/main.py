@@ -11,6 +11,7 @@ from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from odt_common import load_config_from_env
+from odt_common.models import DecisionPolicy, MetricDirection, RankedDecisionPolicy, RankedObjectiveSpec
 from odt_common.models.topology import (
     CPU,
     Cluster,
@@ -22,6 +23,7 @@ from odt_common.models.topology import (
 )
 from odt_common.utils import get_kafka_producer
 from odt_common.utils.kafka import send_message
+from k8s_observability.persistence import build_engine, test_connection
 
 from api.carbon_query import CarbonDataQuery, CarbonDataResponse
 from api.power_query import PowerDataQuery, PowerDataResponse
@@ -30,6 +32,8 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+DEFAULT_DATABASE_URL = "postgresql+psycopg://opendt:opendt@postgres:5432/opendt"
 
 
 @asynccontextmanager
@@ -54,6 +58,19 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize Kafka producer: {e}")
         app.state.kafka_producer = None
 
+    # Initialize database engine
+    app.state.db_engine = None
+    database_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+    try:
+        app.state.db_engine = build_engine(database_url)
+        if test_connection(app.state.db_engine):
+            logger.info("Database engine initialized")
+        else:
+            logger.warning("Database engine initialized but connectivity check failed")
+    except Exception as exc:
+        logger.error("Failed to initialize database engine: %s", exc)
+        app.state.db_engine = None
+
     yield
 
     # Shutdown
@@ -61,6 +78,9 @@ async def lifespan(app: FastAPI):
     if app.state.kafka_producer:
         app.state.kafka_producer.close()
         logger.info("Kafka producer closed")
+    if app.state.db_engine:
+        app.state.db_engine.dispose()
+        logger.info("Database engine disposed")
 
 
 # Create FastAPI application
@@ -104,11 +124,13 @@ async def health_check():
     """Health check endpoint."""
     kafka_status = "connected" if app.state.kafka_producer else "disconnected"
     config_status = "loaded" if app.state.config else "not loaded"
+    database_status = "connected" if app.state.db_engine else "disconnected"
 
     return {
         "status": "healthy",
         "kafka": kafka_status,
         "config": config_status,
+        "database": database_status,
     }
 
 
@@ -145,8 +167,8 @@ DEFAULT_TOPOLOGY = Topology(
 # Example for OpenAPI docs
 DEFAULT_TOPOLOGY_EXAMPLE = DEFAULT_TOPOLOGY.model_dump(mode="json")
 
+@app.put("/api/topology", deprecated=True)
 
-@app.put("/api/topology")
 async def update_topology(
     topology: Annotated[
         Topology,
@@ -220,6 +242,75 @@ async def update_topology(
         "topic": topic_name,
     }
 
+# ============================================================================
+# OBJECTIVE WEIGHT MANAGEMENT
+# ============================================================================
+
+DEFAULT_DECISION_POLICY = RankedDecisionPolicy(
+    policy_type="ranked",
+    objectives={
+        "runtime": RankedObjectiveSpec(name="runtime", direction=MetricDirection.MIN, priority=1, tie_tolerance=30.0),
+        "utilization": RankedObjectiveSpec(name="utilization", direction=MetricDirection.MAX, priority=2, tie_tolerance=0.05),
+        "power": RankedObjectiveSpec(name="power", direction=MetricDirection.MIN, priority=3, tie_tolerance=0.0),
+    }
+)
+
+DEFAULT_DECISION_POLICY_EXAMPLE = DEFAULT_DECISION_POLICY.model_dump(mode="json")
+
+@app.put("/api/objectives")
+async def update_objectives(
+    objectives: Annotated[
+        DecisionPolicy,
+        Body(
+            description="Objectives for decision making",
+            openapi_examples={
+                "default": {
+                    "summary": "Default objectives",
+                    "description": "Default weights: runtime=1, utilization=0",
+                    "value": DEFAULT_DECISION_POLICY_EXAMPLE,
+                }
+            },
+        ),
+    ] = DEFAULT_DECISION_POLICY,
+):
+    # Check if Kafka producer is available
+    if not app.state.kafka_producer:
+        logger.error("Kafka producer not initialized")
+        raise HTTPException(status_code=500, detail="Kafka producer not available")
+
+    # Check if config is loaded (to get topic name)
+    if not app.state.config:
+        logger.error("Configuration not loaded")
+        raise HTTPException(status_code=500, detail="Configuration not loaded")
+    
+    # Get sim.topology topic name from config
+    objectives_topic = app.state.config.kafka.topics.get("objectives")
+    if not objectives_topic:
+        logger.error("dc.objectives topic not configured")
+        raise HTTPException(status_code=500, detail="dc.objectives topic not configured")
+
+    topic_name = objectives_topic.name
+
+    # Publish to dc.objectives Kafka topic with compacted key
+    try:
+        send_message(
+            producer=app.state.kafka_producer,
+            topic=topic_name,
+            message=objectives.model_dump(mode="json"),
+            key="objectives",
+        )
+        logger.info(f"Objectives published to {topic_name}")
+    except Exception as e:
+        logger.error(f"Failed to publish objectives to Kafka: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to publish objectives: {e}") from e
+    
+    return {
+        "status": "updated",
+        "message": f"Objective weights published to {topic_name}",
+        "objectives": objectives.model_dump(),
+        "topic": topic_name,
+    }
+
 
 # ============================================================================
 # POWER DATA QUERY
@@ -260,11 +351,12 @@ async def get_power_data(
     if not app.state.config:
         raise HTTPException(status_code=500, detail="Configuration not loaded")
 
-    try:
-        # FIXME: Remove workload_context from PowerDataQuery
+    if not app.state.db_engine:
+        raise HTTPException(status_code=500, detail="Database engine not available")
 
+    try:
         # Initialize query
-        query = PowerDataQuery(run_id=run_id, workload_context=None)
+        query = PowerDataQuery(run_id=run_id, db_engine=app.state.db_engine)
 
         # Execute query
         result = query.query(interval_seconds=interval_seconds, start_time=start_time)

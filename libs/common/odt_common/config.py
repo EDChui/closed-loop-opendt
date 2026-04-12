@@ -39,6 +39,9 @@ class GlobalConfig(BaseModel):
         default=10.0, description="Simulation speed: 1.0 = realtime, -1 = max speed, >1 = faster"
     )
     calibration_enabled: bool = Field(default=False, description="Enable power model calibration")
+    cpu_frequency_mhz: int = Field(
+        default=2400, description="CPU frequency in MHz, assuming all nodes' cores have the same frequency", gt=0
+    )
 
     @field_validator("speed_factor")
     @classmethod
@@ -49,8 +52,8 @@ class GlobalConfig(BaseModel):
         return v
 
 
-class K8sTraceBridgeConfig(BaseModel):
-    """K8s-Trace-Bridge service configuration."""
+class K8sObserverConfig(BaseModel):
+    """K8s-Observer service configuration."""
 
     namespace: str = Field(default="default", description="Kubernetes namespace to monitor")
     heartbeat_frequency_minutes: int = Field(
@@ -58,13 +61,23 @@ class K8sTraceBridgeConfig(BaseModel):
         description="Frequency in simulation minutes for workload heartbeat messages",
         gt=0,
     )
-    topology_publish_interval_seconds: int = Field(
-        default=30,
-        description="Interval in real seconds for publishing topology updates",
+    resource_collector_frequency_seconds: int = Field(
+        default=15,
+        description="Frequency in seconds for collecting resource usage metrics from Prometheus",
         gt=0,
     )
-    cpu_frequency_mhz: int = Field(
-        default=2400, description="CPU frequency in MHz, assuming all nodes' cores have the same frequency", gt=0
+    node_power_frequency_seconds: int = Field(
+        default=15,
+        description="Frequency in seconds for collecting node power readings",
+        gt=0,
+    )
+
+
+class K8sOrchestratorConfig(BaseModel):
+    """K8s-Orchestrator service configuration."""
+
+    refresh_interval_seconds: int = Field(
+        default=120, description="Interval in seconds to fetch real system status", gt=0
     )
 
 
@@ -74,10 +87,8 @@ class SimulatorConfig(BaseModel):
     simulation_frequency_minutes: int = Field(
         default=15, description="Simulation frequency in minutes (simulated time)", gt=0
     )
-    background_load_nodes: int = Field(
-        ...,
-        description="Number of nodes reserved for background load (not available for simulation)",
-        ge=0,
+    max_parallel_workers: int = Field(
+        default=4, description="Maximum number of parallel OpenDC simulations", gt=0
     )
 
 
@@ -124,7 +135,8 @@ class CalibratorConfig(BaseModel):
 class ServicesConfig(BaseModel):
     """Configuration for all services."""
 
-    k8s_trace_bridge: K8sTraceBridgeConfig = Field(alias="k8s-trace-bridge")
+    k8s_observer: K8sObserverConfig = Field(alias="k8s-observer")
+    k8s_orchestrator: K8sOrchestratorConfig = Field(alias="k8s-orchestrator")
     simulator: SimulatorConfig
     calibrator: CalibratorConfig | None = Field(
         None, description="Calibrator config (only required if calibration_enabled=true)"
@@ -137,10 +149,12 @@ class ServicesConfig(BaseModel):
 class K8sWorkloadContext(BaseModel):
     """Kubernetes-specific workload context"""
 
+    node_names: list[str] = Field(default_factory=list, description="List of node names for scaphandre readings")
     kubeconfig_path: str = Field(default="/kube/config", description="Path to kubeconfig file")
     namespace: str = Field(default="default", description="Kubernetes namespace to monitor")
     resource_type: Literal["pod", "job"] = Field(default="pod", description="Kubernetes resource type to monitor (pod, job)")
     prometheus_url: str = Field(default="http://host.docker.internal:9090", description="URL for Prometheus server to query resource metrics")
+    scaphandre_root: str = Field(default="/hostfs/var/lib/libvirt/scaphandre", description="Root path for Scaphandre energy readings on host filesystem")
     database_url: str = Field(default="postgresql+psycopg://opendt:opendt@postgres:5432/opendt", description="Database connection URL for storing workload metadata")
 
 

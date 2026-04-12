@@ -15,6 +15,10 @@ RUN pip install --no-cache-dir -e /app
 COPY libs/common /app/libs/common
 RUN pip install --no-cache-dir -e /app/libs/common
 
+# Copy and install K8s Observability library
+COPY libs/k8s-observability /app/libs/k8s-observability
+RUN pip install --no-cache-dir -e /app/libs/k8s-observability
+
 # Copy service code
 COPY services/api /app/services/api
 

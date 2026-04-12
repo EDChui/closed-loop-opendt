@@ -13,6 +13,16 @@ from odt_common.models.topology import (
     TopologySnapshot,
 )
 from odt_common.models.workload_message import WorkloadMessage
+from odt_common.models.decision import Decision
+from odt_common.models.proposal import Proposal
+from odt_common.models.evaluated_proposal import EvaluatedProposal
+from odt_common.models.simulation import SimulationMetric, SimulationResult, ProposalOutcome, SimulationBatch, SimulationBatchReport
+from odt_common.models.policy import (
+    MetricDirection,
+    BaseObjectiveSpec, WeightedObjectiveSpec, WeightedDecisionPolicy, 
+    RankedObjectiveSpec, RankedDecisionPolicy,
+    DecisionPolicy
+)
 
 # Update forward references for Task.fragments
 Task.model_rebuild()
@@ -29,4 +39,19 @@ __all__ = [
     "Memory",
     "CPUPowerModel",
     "WorkloadMessage",
+    "Decision",
+    "Proposal",
+    "EvaluatedProposal",
+    "SimulationMetric",
+    "SimulationResult",
+    "ProposalOutcome",
+    "SimulationBatch",
+    "SimulationBatchReport",
+    "MetricDirection",
+    "BaseObjectiveSpec",
+    "WeightedObjectiveSpec",
+    "WeightedDecisionPolicy",
+    "RankedObjectiveSpec",
+    "RankedDecisionPolicy",
+    "DecisionPolicy",
 ]

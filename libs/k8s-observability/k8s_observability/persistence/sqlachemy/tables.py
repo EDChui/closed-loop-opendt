@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Boolean, DateTime, Float, Integer, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from k8s_observability.persistence import Base
@@ -43,3 +43,14 @@ class K8sResourceUsageSnapshotRow(Base):
 
     cpu_usage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     mem_usage_mb: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+
+class NodePowerReadingRow(Base):
+    __tablename__ = "node_power_readings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    node_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    capture_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    energy_uj: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    energy_usage_j: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    power_draw_w: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
