@@ -3,6 +3,7 @@ import logging
 import os
 
 from odt_common import load_config_from_env
+from odt_common.models import MetricDirection, RankedDecisionPolicy, RankedObjectiveSpec
 from odt_common.utils import get_kafka_bootstrap_servers
 from k8s_orchestrator.application.config import DecisionOrchestratorConfig
 from k8s_orchestrator.application.orchestrator import DecisionOrchestrator
@@ -10,6 +11,7 @@ from k8s_orchestrator.kubernetes.system_adapter import K8sSystemAdapter
 from k8s_orchestrator.domain.kubernetes import K8sProposalGenerator, K8sDecisionMaker
 from k8s_orchestrator.kafka.state_publisher import KafkaStatePublisher
 from k8s_orchestrator.kafka.simulation_gateway import KafkaSimulationGateway
+from k8s_orchestrator.kafka.runtime_config_gateway import KafkaRuntimeConfigGateway
 
 
 logging.basicConfig(
@@ -34,6 +36,7 @@ async def main() -> None:
     topology_topic = config.kafka.topics["topology"].name
     sim_batch_topic = config.kafka.topics["sim_batch"].name
     sim_batch_report_topic = config.kafka.topics["sim_batch_report"].name
+    objectives_topic = config.kafka.topics["objectives"].name
     
     logger.info(f"Kafka bootstrap servers: {kafka_bootstrap_servers}")
     logger.info(f"Topology topic: {topology_topic}")
@@ -49,6 +52,15 @@ async def main() -> None:
     # Get config settings
     cpu_frequency_mhz = config.global_config.cpu_frequency_mhz
     refresh_interval_seconds = config.services.k8s_orchestrator.refresh_interval_seconds
+    # TODO: Make the initial policy configurable
+    initial_policy = RankedDecisionPolicy(
+        policy_type="ranked",
+        objectives={
+            "runtime": RankedObjectiveSpec(name="runtime", direction=MetricDirection.MIN, priority=1, tie_tolerance=30.0),
+            "utilization": RankedObjectiveSpec(name="utilization", direction=MetricDirection.MAX, priority=2, tie_tolerance=0.05),
+            "power": RankedObjectiveSpec(name="power", direction=MetricDirection.MIN, priority=3, tie_tolerance=0.0),
+        }
+    )
 
     logger.info(f"CPU frequency (MHz): {cpu_frequency_mhz}")
     logger.info(f"Refresh interval (seconds): {refresh_interval_seconds}")
@@ -64,7 +76,9 @@ async def main() -> None:
         cpu_frequency_mhz=cpu_frequency_mhz
     )
     proposal_generator = K8sProposalGenerator()
-    decision_maker = K8sDecisionMaker()
+    decision_maker = K8sDecisionMaker(
+        policy=initial_policy
+    )
     state_publisher = KafkaStatePublisher(
         kafka_bootstrap_servers=kafka_bootstrap_servers,
         topology_topic=topology_topic
@@ -75,10 +89,16 @@ async def main() -> None:
         sim_batch_report_topic=sim_batch_report_topic,
         consumer_group=consumer_group
     )
+    runtime_config_gateway = KafkaRuntimeConfigGateway(
+        kafka_bootstrap_servers=kafka_bootstrap_servers,
+        objectives_topic=objectives_topic,
+        consumer_group=consumer_group
+    )
 
     # Start components that require async startup
     await state_publisher.start()
     await simulation_gateway.start()
+    await runtime_config_gateway.start()
 
     decision_orchestrator = DecisionOrchestrator(
         real_system=system_adapter,
@@ -86,6 +106,7 @@ async def main() -> None:
         decision_maker=decision_maker,
         state_publisher=state_publisher,
         simulation_gateway=simulation_gateway,
+        runtime_config_gateway=runtime_config_gateway,
         config=orchestrator_config
     )
 
@@ -96,6 +117,7 @@ async def main() -> None:
     finally:
         await state_publisher.stop()
         await simulation_gateway.stop()
+        await runtime_config_gateway.stop()
         logger.info("Kubernetes Orchestrator service stopped")
 
 

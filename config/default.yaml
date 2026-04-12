@@ -11,7 +11,7 @@ services:
     heartbeat_frequency_minutes: 1
 
   k8s-orchestrator:
-    refresh_interval_seconds: 120
+    refresh_interval_seconds: 47
 
   simulator:
     simulation_frequency_minutes: 5
@@ -35,11 +35,18 @@ kafka:
         cleanup.policy: "compact"
         # Keep at least 1 hour
         min.compaction.lag.ms: "3600000"
+    objectives:
+      name: "dc.objectives"
+      config:
+        cleanup.policy: "compact"
+        min.compaction.lag.ms: "0"
     system:
+      # TODO: Remove? Actual usage unknown
       name: "sys.config"
       config:
         cleanup.policy: "compact"
     sim_topology:
+      # TODO: Rename to calibration_topic for clarity
       name: "sim.topology"
       config:
         # Compacted topic - keeps latest simulated topology
@@ -54,6 +61,7 @@ kafka:
       config:
         retention.ms: "600000" # 10 minutes retention for simulation batch reports
     results:
+      # TODO: Remove? Actual usage unknown
       name: "sim.results"
       config:
         # 7 days retention for simulation results

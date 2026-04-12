@@ -122,7 +122,8 @@ class NodePowerProducer(BaseProducer):
         self.node_power_repo.commit()
 
     def _emit_power_readings(self, readings: list[NodePowerReading], capture_time: datetime):
-        # TODO: Consume topology message to update node list dynamically
+        # TODO: (Low priority) Consume topology message to update node list dynamically?
+        # In theory unavailable/unschedulable node consume little to no energy that can be ignored
         total_power_draw = sum(r.power_draw_w for r in readings if r.power_draw_w is not None)
         total_energy_usage = sum(r.energy_usage_j for r in readings if r.energy_usage_j is not None)
 
