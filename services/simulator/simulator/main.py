@@ -323,13 +323,20 @@ class SimulationService:
             calibrated_real_topology=self.calibrated_real_topology,
         )
 
+        # Process and publish simulation batch report to Kafka
+        # Use the same last process time from result processor to make sure all proposals are clipped to the same time range for fair comparison.
+        last_processed_time = self.result_processor.get_last_processed_time()
+        sim_batch_report = self._analyze_and_create_simulation_batch_report(proposal_execution_results, last_processed_time, aligned_simulated_time)
+        self._publish_simulation_batch_report(sim_batch_report)
+
         # Process and aggregate simulation results
+        # This step is for building agg_result.parquet files
+        # Always assume the first proposal is the baseline proposal
         baseline_result = proposal_execution_results[0] if proposal_execution_results else None
         if baseline_result and baseline_result.output_dir:
             output_dir = baseline_result.output_dir
             was_cached = baseline_result.cached
             try:
-                last_processed_time = self.result_processor.get_last_processed_time()
                 self.result_processor.process_simulation_results(
                     run_number=self.run_number,
                     output_dir=output_dir,
@@ -342,10 +349,6 @@ class SimulationService:
         # Update statistics and simulation time
         self.simulations_run += 1
         self.task_accumulator.last_simulation_time = aligned_simulated_time
-
-        # Process and publish simulation batch report to Kafka
-        sim_batch_report = self._analyze_and_create_simulation_batch_report(proposal_execution_results, last_processed_time, aligned_simulated_time)
-        self._publish_simulation_batch_report(sim_batch_report)
 
         logger.info(
             f"📊 Total Stats: {self.tasks_processed} tasks processed, "
