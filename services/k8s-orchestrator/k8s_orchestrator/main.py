@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from pathlib import Path
 
 from odt_common import load_config_from_env
 from odt_common.models import MetricDirection, RankedDecisionPolicy, RankedObjectiveSpec
@@ -12,6 +13,7 @@ from k8s_orchestrator.domain.kubernetes import K8sProposalGenerator, K8sDecision
 from k8s_orchestrator.kafka.state_publisher import KafkaStatePublisher
 from k8s_orchestrator.kafka.simulation_gateway import KafkaSimulationGateway
 from k8s_orchestrator.kafka.runtime_config_gateway import KafkaRuntimeConfigGateway
+from k8s_orchestrator.persistence.jsonl_history_repository import JsonlHistoryRepository
 
 
 logging.basicConfig(
@@ -46,8 +48,12 @@ async def main() -> None:
     # Get other configuration from environment variables
     consumer_group = os.getenv("CONSUMER_GROUP", "k8s-orchestrator")
     kubeconfig_path = os.getenv("KUBECONFIG", "/kube/config")
+    run_output_dir = Path(os.getenv("DATA_DIR", "/app/data"))
+    run_id = os.getenv("RUN_ID")
 
-    logger.info(f"Consumer group: {consumer_group}")
+    if not run_id:
+        logger.error("RUN_ID environment variable not set")
+        raise ValueError("RUN_ID environment variable is required")
 
     # Get config settings
     cpu_frequency_mhz = config.global_config.cpu_frequency_mhz
@@ -94,6 +100,9 @@ async def main() -> None:
         objectives_topic=objectives_topic,
         consumer_group=consumer_group
     )
+    jsonl_history_repository = JsonlHistoryRepository(
+        output_dir=Path(run_output_dir) / run_id / "history"
+    )
 
     # Start components that require async startup
     await state_publisher.start()
@@ -107,6 +116,7 @@ async def main() -> None:
         state_publisher=state_publisher,
         simulation_gateway=simulation_gateway,
         runtime_config_gateway=runtime_config_gateway,
+        history_port=jsonl_history_repository,
         config=orchestrator_config
     )
 

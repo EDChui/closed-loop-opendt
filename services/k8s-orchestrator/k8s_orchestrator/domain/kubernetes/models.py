@@ -15,7 +15,6 @@ class K8sActionKind(StrEnum):
 class K8sSystemSnapshot(SystemSnapshot):
     topology: Topology
     max_available_node_count: int
-    # TODO: Scheduling policy in the future?
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, K8sSystemSnapshot):

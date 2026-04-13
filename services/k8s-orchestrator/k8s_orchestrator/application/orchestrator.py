@@ -10,11 +10,10 @@ from odt_common.models import (
     SimulationBatch,
     SimulationBatchReport,
     EvaluatedProposal,
-    DecisionPolicy
 )
 from k8s_orchestrator.application.config import DecisionOrchestratorConfig
 from k8s_orchestrator.application.events import Event, Priority, QueueItem, RefreshTick, ConfigChange
-from k8s_orchestrator.application.ports import SystemPort, SimulationGateway, StatePublisher, RuntimeConfigGateway
+from k8s_orchestrator.application.ports import SystemPort, SimulationGateway, StatePublisher, RuntimeConfigGateway, HistoryPort
 from k8s_orchestrator.domain import (
     DecisionMaker,
     ObservedState,
@@ -39,6 +38,7 @@ class DecisionOrchestrator:
         state_publisher: StatePublisher,
         simulation_gateway: SimulationGateway,
         runtime_config_gateway: RuntimeConfigGateway,
+        history_port: HistoryPort,
         config: DecisionOrchestratorConfig,
     ):
         self.real_system = real_system
@@ -47,6 +47,7 @@ class DecisionOrchestrator:
         self.state_publisher = state_publisher
         self.simulation_gateway = simulation_gateway
         self.runtime_config_gateway = runtime_config_gateway
+        self.history_port = history_port
         self.config = config
 
         self.current_state: Optional[ObservedState] = None
@@ -163,6 +164,7 @@ class DecisionOrchestrator:
         self._drop_pending_batches_for_other_states(observed_state.state_id)
 
         await self.state_publisher.publish_system_state(observed_state, cause=cause)
+        await self.history_port.record_observed_state(observed_state, cause=cause)
 
         # Generate proposals and submit for simulation
         batch = self.proposal_generator.generate(observed_state)
@@ -219,10 +221,27 @@ class DecisionOrchestrator:
                 self.real_system.apply_decision(decision),
                 timeout=self.config.apply_timeout_seconds,
             )
+            await self.history_port.record_applied_decision(
+                state_id=self.current_state.state_id,
+                decision=decision,
+                success=True
+            )
         except TimeoutError as e:
             logger.error(f"Timeout while applying decision for batch ID {report.batch_id}: {e}", exc_info=True)
+            await self.history_port.record_applied_decision(
+                state_id=self.current_state.state_id,
+                decision=decision,
+                success=False,
+                error_message=f"Timeout: {e}"
+            )
         except Exception as e:
             logger.error(f"Error while applying decision for batch ID {report.batch_id}: {e}", exc_info=True)
+            await self.history_port.record_applied_decision(
+                state_id=self.current_state.state_id,
+                decision=decision,
+                success=False,
+                error_message=str(e)
+            )
 
         # Always re-read real state after acting
         await self._refresh_cycle(cause=f"post-apply:{decision.action}")

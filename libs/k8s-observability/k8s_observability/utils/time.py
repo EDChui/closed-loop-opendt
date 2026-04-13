@@ -17,6 +17,10 @@ class TimeUtils:
         return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     
     @staticmethod
+    def now_utc_iso() -> str:
+        return datetime.now(timezone.utc).isoformat()
+    
+    @staticmethod
     def to_epoch_seconds(dt: Union[datetime, int, None]) -> int:
         if isinstance(dt, int):
             return dt
