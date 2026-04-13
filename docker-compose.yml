@@ -170,6 +170,8 @@ services:
       CONFIG_FILE: /app/config.yaml
       PYTHONUNBUFFERED: 1
       KUBECONFIG: /kube/config
+      RUN_ID: ${RUN_ID}
+      DATA_DIR: /app/data
     volumes:
       # Mount source code for hot reload
       - ./services/k8s-orchestrator:/app/services/k8s-orchestrator
@@ -179,6 +181,8 @@ services:
       - ${CONFIG_PATH:-./config/default.yaml}:/app/config.yaml:ro
       # Kubeconfig for accessing Kubernetes API
       - ${HOME}/.kube:/kube:ro
+      # Mount data directory for run outputs
+      - ./data:/app/data
     depends_on:
       kafka-init:
         condition: service_completed_successfully

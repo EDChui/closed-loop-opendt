@@ -10,8 +10,10 @@ class RefreshTick:
     reason: Literal["startup", "periodic", "post_apply", "manual"]
     scheduled_at_monotonic: float
 
-# Temporarily aliasing ConfigChanged to DecisionPolicy for simplicity
-ConfigChange = DecisionPolicy
+@dataclass(frozen=True)
+class ConfigChange:
+    new_policy: DecisionPolicy
+
 
 Event = Union[RefreshTick, SimulationBatchReport, ConfigChange]
 

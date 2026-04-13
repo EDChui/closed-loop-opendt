@@ -1,7 +1,6 @@
 from abc import ABC
 from dataclasses import dataclass
-from enum import StrEnum
-from typing import Generic, Optional, Any, TypeVar
+from typing import Generic, TypeVar
 
 
 class SystemSnapshot(ABC):
