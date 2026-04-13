@@ -3,13 +3,14 @@ from typing import Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from k8s_observability.models import K8sTaskRecord, K8sResourceUsageSnapshot, NodePowerReading
+from k8s_observability.models import K8sTaskRecord, K8sResourceUsageSnapshot, NodePowerReading, NodeUtilizationSnapshot
 from k8s_observability.persistence.sqlachemy.mappers import (
     row_to_resource_usage_snapshot,
     resource_usage_snapshot_to_row,
     task_record_to_row,
     node_power_reading_to_row,
-    row_to_node_power_reading
+    row_to_node_power_reading,
+    node_utilization_snapshot_to_row,
 )
 from k8s_observability.persistence.sqlachemy.tables import K8sResourceUsageSnapshotRow, NodePowerReadingRow
 
@@ -27,7 +28,7 @@ class K8sTaskRecordRepository:
         self._session.commit()
 
 
-class K8sResourceUsageSnapshotRepository:
+class K8sWorkloadResourceUsageSnapshotRepository:
     def __init__(self, session: Session):
         self._session = session
 
@@ -72,6 +73,20 @@ class NodePowerReadingRepository:
 
         result = self._session.execute(query).scalars().all()
         return [row_to_node_power_reading(row) for row in result]
+
+    def commit(self):
+        self._session.commit()
+
+
+class NodeResourceUsageSnapshotRepository:
+    def __init__(self, session: Session):
+        self._session = session
+
+    def add_many(self, rows: Sequence[NodeUtilizationSnapshot]) -> Sequence[int]:
+        models = [node_utilization_snapshot_to_row(row) for row in rows]
+        self._session.add_all(models)
+        self._session.flush()
+        return [model.id for model in models]
 
     def commit(self):
         self._session.commit()

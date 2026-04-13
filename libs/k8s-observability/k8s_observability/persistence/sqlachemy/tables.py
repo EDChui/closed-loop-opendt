@@ -54,3 +54,13 @@ class NodePowerReadingRow(Base):
     energy_uj: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     energy_usage_j: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     power_draw_w: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+
+class NodeUtilizationSnapshotRow(Base):
+    __tablename__ = "node_utilization_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    node_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    capture_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    cpu_utilization: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    mem_utilization: Mapped[Optional[float]] = mapped_column(Float, nullable=True)

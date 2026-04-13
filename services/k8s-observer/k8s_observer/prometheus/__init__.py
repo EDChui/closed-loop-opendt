@@ -1,9 +1,10 @@
 from k8s_observer.prometheus.client import PrometheusClient
-from k8s_observer.prometheus.collectors import PrometheusResourceCollector, PodResourceCollector, JobResourceCollector
+from k8s_observer.prometheus.collectors import PrometheusWorkloadResourceCollector, PodResourceCollector, JobResourceCollector, NodeResourceCollector
 
 __all__ = [
     "PrometheusClient",
-    "PrometheusResourceCollector",
+    "PrometheusWorkloadResourceCollector",
     "PodResourceCollector",
     "JobResourceCollector",
+    "NodeResourceCollector"
 ]

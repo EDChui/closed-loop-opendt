@@ -12,7 +12,7 @@ from math import ceil
 from odt_common import Fragment, Task
 from k8s_observability.models import K8sTaskRecord, K8sResourceUsageSnapshot
 from k8s_observability.kubernetes import K8sResourceTerminalStream
-from k8s_observability.persistence import build_engine, build_session_factory, K8sTaskRecordRepository, K8sResourceUsageSnapshotRepository
+from k8s_observability.persistence import build_engine, build_session_factory, K8sTaskRecordRepository, K8sWorkloadResourceUsageSnapshotRepository
 from k8s_observer.producers.base import BaseProducer
 
 
@@ -65,7 +65,7 @@ class K8sWorkloadProducer(BaseProducer):
         self.db_session_factory = build_session_factory(self.db_engine)
         self.db_session = self.db_session_factory()
         self.task_record_repo = K8sTaskRecordRepository(self.db_session)
-        self.resource_usage_repo = K8sResourceUsageSnapshotRepository(self.db_session)
+        self.resource_usage_repo = K8sWorkloadResourceUsageSnapshotRepository(self.db_session)
 
     def _build_task_message(self, task: Task) -> dict[str, object]:
         return {

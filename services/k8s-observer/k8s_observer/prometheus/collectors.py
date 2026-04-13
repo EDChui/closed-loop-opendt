@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import replace
 from typing import Dict, List, Optional
 
-from k8s_observability.models import K8sResourceUsageSnapshot
+from k8s_observability.models import K8sResourceUsageSnapshot, NodeUtilizationSnapshot
 from k8s_observability.kubernetes import K8sJobUidResolver
 from k8s_observability.utils import TimeUtils, UnitUtils
 from k8s_observer.prometheus.client import PrometheusClient
@@ -17,6 +17,41 @@ def escape_quotes_and_backslashes(value: str) -> str:
 
 
 class PrometheusResourceCollector(ABC):
+    @property
+    @abstractmethod
+    def resource_type(self) -> str:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def result_label(self) -> str:
+        raise NotImplementedError
+
+    def _merge_vector(self, merged: Dict[str, dict], vector: List[dict], target_key: str) -> None:
+        for series in vector:
+            metric = series.get("metric") or {}
+            resource_id = metric.get(self.result_label)
+
+            if not resource_id:
+                continue
+
+            sample = series.get("value") or []
+            if len(sample) != 2:
+                continue
+
+            value = float(sample[1])
+            entry = merged.setdefault(resource_id, {})
+            entry[target_key] = value
+
+            uid = metric.get("uid")
+            if uid:
+                entry["uid"] = uid
+    
+    def collect_metrics(self, eval_dt: datetime) -> List:
+        raise NotImplementedError
+
+
+class PrometheusWorkloadResourceCollector(PrometheusResourceCollector, ABC):
     def __init__(
         self,
         prom: PrometheusClient,
@@ -28,16 +63,6 @@ class PrometheusResourceCollector(ABC):
         self.namespace = namespace
         self.cpu_rate_window = cpu_rate_window
         self.resource_name_regex = resource_name_regex
-
-    @property
-    @abstractmethod
-    def resource_type(self) -> str:
-        raise NotImplementedError
-
-    @property
-    @abstractmethod
-    def result_label(self) -> str:
-        raise NotImplementedError
 
     @abstractmethod
     def cpu_query(self) -> str:
@@ -79,28 +104,8 @@ class PrometheusResourceCollector(ABC):
             snapshots.append(snapshot)
         return snapshots
 
-    def _merge_vector(self, merged: Dict[str, dict], vector: List[dict], target_key: str) -> None:
-        for series in vector:
-            metric = series.get("metric") or {}
-            resource_id = metric.get(self.result_label)
 
-            if not resource_id:
-                continue
-
-            sample = series.get("value") or []
-            if len(sample) != 2:
-                continue
-
-            value = float(sample[1])
-            entry = merged.setdefault(resource_id, {})
-            entry[target_key] = value
-
-            uid = metric.get("uid")
-            if uid:
-                entry["uid"] = uid
-
-
-class PodResourceCollector(PrometheusResourceCollector):
+class PodResourceCollector(PrometheusWorkloadResourceCollector):
     @property
     def resource_type(self) -> str:
         return "pod"
@@ -141,7 +146,7 @@ class PodResourceCollector(PrometheusResourceCollector):
         )
 
 
-class JobResourceCollector(PrometheusResourceCollector):
+class JobResourceCollector(PrometheusWorkloadResourceCollector):
     def __init__(
         self,
         prom: PrometheusClient,
@@ -220,4 +225,72 @@ class JobResourceCollector(PrometheusResourceCollector):
             snapshot_with_uid = replace(snapshot, uid=uid)
             snapshots.append(snapshot_with_uid)
         
+        return snapshots
+
+
+class NodeResourceCollector(PrometheusResourceCollector):
+    def __init__(
+        self,
+        prom: PrometheusClient,
+        cpu_rate_window: str = "2m",
+        resource_name_regex: Optional[str] = None,
+    ):
+        self.prom = prom
+        self.cpu_rate_window = cpu_rate_window
+        self.resource_name_regex = resource_name_regex
+
+    @property
+    def resource_type(self) -> str:
+        return "node"
+
+    @property
+    def result_label(self) -> str:
+        return "instance"
+
+    def _node_selector(self) -> str:
+        selector_parts = ['instance!=""']
+
+        if self.resource_name_regex:
+            selector_parts.append(
+                f'instance=~"{escape_quotes_and_backslashes(self.resource_name_regex)}"'
+            )
+
+        return ",".join(selector_parts)
+
+    def cpu_utilization_query(self) -> str:
+        return (
+            "(1 - avg by (instance) ("
+            f'rate(node_cpu_seconds_total{{mode="idle",{self._node_selector()}}}[{self.cpu_rate_window}])'
+            "))"
+        )
+
+    def memory_utilization_query(self) -> str:
+        return (
+            "(1 - "
+            f'node_memory_MemAvailable_bytes{{{self._node_selector()}}} / '
+            f'node_memory_MemTotal_bytes{{{self._node_selector()}}}'
+            ")"
+        )
+
+    def collect_metrics(self, eval_dt: datetime) -> List[NodeUtilizationSnapshot]:
+        eval_ts = TimeUtils.to_epoch_seconds(eval_dt)
+        cpu_result = self.prom.query_instant(self.cpu_utilization_query(), eval_ts)
+        mem_result = self.prom.query_instant(self.memory_utilization_query(), eval_ts)
+
+        merged: Dict[str, dict] = {}
+        self._merge_vector(merged, cpu_result, "cpu_utilization")
+        self._merge_vector(merged, mem_result, "memory_utilization")
+
+        snapshots = []
+        for node_name in sorted(merged.keys()):
+            values = merged[node_name]
+
+            snapshot = NodeUtilizationSnapshot(
+                node_name=node_name,
+                capture_time=eval_dt,
+                cpu_utilization=values.get("cpu_utilization", 0.0),
+                memory_utilization=values.get("memory_utilization", 0.0),
+            )
+            snapshots.append(snapshot)
+
         return snapshots
