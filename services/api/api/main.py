@@ -4,7 +4,6 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import Body, FastAPI, HTTPException, Query
@@ -25,7 +24,10 @@ from odt_common.utils import get_kafka_producer
 from odt_common.utils.kafka import send_message
 from k8s_observability.persistence import build_engine, test_connection
 
+from api.applied_decision_query import AppliedDecisionQuery, AppliedDecisionResponse
 from api.carbon_query import CarbonDataQuery, CarbonDataResponse
+from api.utilization_query import UtilizationQuery, UtilizationResponse
+from api.machine_count_query import MachineCountQuery, MachineCountResponse
 from api.power_query import PowerDataQuery, PowerDataResponse
 
 logging.basicConfig(
@@ -373,6 +375,127 @@ async def get_power_data(
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Error querying power data: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
+
+
+# ============================================================================
+# CPU UTILIZATION DATA QUERY
+# ============================================================================
+
+
+@app.get("/api/cpu_utilization", response_model=UtilizationResponse)
+async def get_cpu_utilization_data(
+    interval_seconds: int = Query(
+        60, gt=0, le=3600, description="Sampling interval in seconds (1-3600)"
+    ),
+    start_time: datetime | None = Query(None, description="Optional start time (ISO 8601 format)"),
+):
+    """Query aligned CPU utilization data from simulation and observations.
+
+    This endpoint compares:
+    - Simulated utilization from `agg_results.parquet`
+    - Actual node utilization from `node_utilization_snapshots`
+
+    Control-plane readings from `cloudcontrollerechui` are excluded from the
+    actual utilization aggregation because no jobs are dispatched there.
+    """
+    if not app.state.db_engine:
+        raise HTTPException(status_code=500, detail="Database engine not available")
+
+    run_id = os.getenv("RUN_ID")
+    if not run_id:
+        raise HTTPException(status_code=500, detail="RUN_ID environment variable not set")
+
+    try:
+        query = UtilizationQuery(run_id=run_id, db_engine=app.state.db_engine)
+        result = query.query(interval_seconds=interval_seconds, start_time=start_time)
+
+        logger.info(f"CPU utilization query successful: {result.metadata['count']} data points")
+        return result
+
+    except FileNotFoundError as e:
+        logger.error(f"Data file not found: {e}")
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        logger.error(f"Invalid data: {e}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"Error querying CPU utilization data: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
+
+
+# ============================================================================
+# MACHINE COUNT HISTORY QUERY
+# ============================================================================
+
+
+@app.get("/api/working_machines", response_model=MachineCountResponse)
+async def get_working_machine_history(
+    start_time: datetime | None = Query(None, description="Optional start time (ISO 8601 format)"),
+):
+    """Query working machine counts over time from observed state history.
+
+    The response includes the total number of working machines and one series per
+    `cluster/host` entry from the topology snapshots so heterogeneous setups can
+    be visualized without losing host-type detail.
+    """
+    run_id = os.getenv("RUN_ID")
+    if not run_id:
+        raise HTTPException(status_code=500, detail="RUN_ID environment variable not set")
+
+    try:
+        query = MachineCountQuery(run_id=run_id)
+        result = query.query(start_time=start_time)
+
+        logger.info(f"Working machine query successful: {result.metadata['count']} data points")
+        return result
+
+    except FileNotFoundError as e:
+        logger.error(f"Data file not found: {e}")
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        logger.error(f"Invalid data: {e}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"Error querying working machine history: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
+
+
+# ============================================================================
+# APPLIED DECISION HISTORY QUERY
+# ============================================================================
+
+
+@app.get("/api/applied_decisions", response_model=AppliedDecisionResponse)
+async def get_applied_decision_history(
+    start_time: datetime | None = Query(None, description="Optional start time (ISO 8601 format)"),
+    include_no_op: bool = Query(True, description="Whether to include no-op decisions"),
+):
+    """Query decision events over time from applied decision history.
+
+    The response is event-oriented instead of cumulative: each returned row
+    represents a decision timestamp and exposes one numeric series per action so
+    Grafana can visualize exactly when decisions occurred.
+    """
+    run_id = os.getenv("RUN_ID")
+    if not run_id:
+        raise HTTPException(status_code=500, detail="RUN_ID environment variable not set")
+
+    try:
+        query = AppliedDecisionQuery(run_id=run_id)
+        result = query.query(start_time=start_time, include_no_op=include_no_op)
+
+        logger.info(f"Applied decision query successful: {result.metadata['count']} data points")
+        return result
+
+    except FileNotFoundError as e:
+        logger.error(f"Data file not found: {e}")
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        logger.error(f"Invalid data: {e}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"Error querying applied decision history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
 
 
