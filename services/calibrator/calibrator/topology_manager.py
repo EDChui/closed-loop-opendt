@@ -20,7 +20,7 @@ class TopologyManager:
         self,
         kafka_bootstrap_servers: str,
         dc_topology_topic: str,
-        sim_topology_topic: str,
+        sim_calibration_topic: str,
         consumer_group: str = "calibrator-topology",
     ):
         """Initialize the topology manager.
@@ -28,12 +28,12 @@ class TopologyManager:
         Args:
             kafka_bootstrap_servers: Kafka broker addresses
             dc_topology_topic: Kafka topic for real topology (dc.topology)
-            sim_topology_topic: Kafka topic for simulated topology (sim.topology)
+            sim_calibration_topic: Kafka topic for simulated topology (sim.calibration)
             consumer_group: Kafka consumer group ID
         """
         self.kafka_bootstrap_servers = kafka_bootstrap_servers
         self.dc_topology_topic = dc_topology_topic
-        self.sim_topology_topic = sim_topology_topic
+        self.sim_calibration_topic = sim_calibration_topic
         self.consumer_group = consumer_group
 
         # Topology state
@@ -49,7 +49,7 @@ class TopologyManager:
         self._producer = get_kafka_producer(kafka_bootstrap_servers)
 
         logger.info(
-            f"Initialized TopologyManager for topics {dc_topology_topic}, {sim_topology_topic}"
+            f"Initialized TopologyManager for topics {dc_topology_topic}, {sim_calibration_topic}"
         )
 
     def start(self) -> None:
@@ -85,7 +85,7 @@ class TopologyManager:
 
         try:
             consumer = get_kafka_consumer(
-                topics=[self.dc_topology_topic, self.sim_topology_topic],
+                topics=[self.dc_topology_topic, self.sim_calibration_topic],
                 group_id=self.consumer_group,
                 bootstrap_servers=self.kafka_bootstrap_servers,
             )
@@ -108,7 +108,7 @@ class TopologyManager:
                                 logger.info("Initialized simulated topology from real topology")
                         logger.debug("Updated real topology")
 
-                    elif message.topic == self.sim_topology_topic:
+                    elif message.topic == self.sim_calibration_topic:
                         # Simulated topology (raw Topology)
                         topology = Topology(**message.value)
                         with self._lock:
@@ -192,11 +192,11 @@ class TopologyManager:
             # Use a consistent key for compacted topic (only latest topology is kept)
             send_message(
                 producer=self._producer,
-                topic=self.sim_topology_topic,
+                topic=self.sim_calibration_topic,
                 message=message_data,
                 key="topology",  # Required for compacted topics
             )
-            logger.info(f"Published topology to {self.sim_topology_topic}")
+            logger.info(f"Published topology to {self.sim_calibration_topic}")
             return True
 
         except Exception as e:

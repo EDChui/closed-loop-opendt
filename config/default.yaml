@@ -45,9 +45,8 @@ kafka:
       name: "sys.config"
       config:
         cleanup.policy: "compact"
-    sim_topology:
-      # TODO: Rename to calibration_topic for clarity
-      name: "sim.topology"
+    sim_calibration:
+      name: "sim.calibration"
       config:
         # Compacted topic - keeps latest simulated topology
         cleanup.policy: "compact"
