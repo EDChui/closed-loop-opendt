@@ -6,6 +6,7 @@ Handles topology subscription, modification, and publishing.
 import copy
 import logging
 import threading
+from datetime import datetime, timezone
 
 from odt_common.models import Topology, TopologySnapshot
 from odt_common.utils import get_kafka_consumer, get_kafka_producer, send_message
@@ -37,7 +38,7 @@ class TopologyManager:
         self.consumer_group = consumer_group
 
         # Topology state
-        self._real_topology: Topology | None = None
+        self._topology_snapshot: TopologySnapshot | None = None
         self._sim_topology: Topology | None = None
         self._lock = threading.Lock()
 
@@ -100,20 +101,15 @@ class TopologyManager:
                     if message.topic == self.dc_topology_topic:
                         # Real topology (wrapped in TopologySnapshot)
                         snapshot = TopologySnapshot(**message.value)
+                        logger.info(f"📡 Received real topology snapshot (id: {snapshot.state_id}, timestamp: {snapshot.timestamp})")
                         with self._lock:
-                            self._real_topology = snapshot.topology
-                            # Initialize sim topology if not set
-                            if self._sim_topology is None:
-                                self._sim_topology = copy.deepcopy(self._real_topology)
-                                logger.info("Initialized simulated topology from real topology")
+                            self._topology_snapshot = snapshot
+                            self._sim_topology = copy.deepcopy(self._topology_snapshot.topology)
                         logger.debug("Updated real topology")
 
                     elif message.topic == self.sim_calibration_topic:
-                        # Simulated topology (raw Topology)
-                        topology = Topology(**message.value)
-                        with self._lock:
-                            self._sim_topology = topology
-                        logger.debug("Updated simulated topology")
+                        # Disabled for now
+                        return
 
                 except Exception as e:
                     logger.error(f"Error processing topology message: {e}", exc_info=True)
@@ -179,7 +175,7 @@ class TopologyManager:
         return current
 
     def publish_topology(self, topology: Topology) -> bool:
-        """Publish topology to simulated topology topic.
+        """Publish topologySnapshot to calibration topic.
 
         Args:
             topology: Topology to publish
@@ -188,7 +184,12 @@ class TopologyManager:
             True if published successfully, False otherwise
         """
         try:
-            message_data = topology.model_dump(mode="json")
+            topology_snapshot = TopologySnapshot(
+                state_id=self._topology_snapshot.state_id if self._topology_snapshot else "unknown",
+                timestamp=self._topology_snapshot.timestamp if self._topology_snapshot else datetime.now(timezone.utc),
+                topology=topology
+            )
+            message_data = topology_snapshot.model_dump(mode="json")
             # Use a consistent key for compacted topic (only latest topology is kept)
             send_message(
                 producer=self._producer,

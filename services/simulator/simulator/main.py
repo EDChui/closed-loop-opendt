@@ -118,8 +118,8 @@ class SimulationService:
         )
 
         # Topology state
-        self.real_topology: Topology | None = None
-        self.calibrated_real_topology: Topology | None = None
+        self.topology_snapshot: TopologySnapshot | None = None
+        self.calibrated_topology: Topology | None = None
         self.sim_batch: SimulationBatch | None = None
         self.sim_batch_received_at: float | None = None
 
@@ -282,7 +282,7 @@ class SimulationService:
             logger.warning("OpenDC runner not available, skipping simulation")
             return
 
-        if not self.calibrated_real_topology:
+        if not self.calibrated_topology:
             logger.warning("No topology available, skipping simulation")
             return
         
@@ -320,7 +320,7 @@ class SimulationService:
             aligned_simulated_time=aligned_simulated_time,
             tasks=all_tasks,
             simulation_batch=self.sim_batch,
-            calibrated_real_topology=self.calibrated_real_topology,
+            calibrated_topology=self.calibrated_topology,
         )
 
         # Process and publish simulation batch report to Kafka
@@ -405,15 +405,13 @@ class SimulationService:
             # Parse into TopologySnapshot model
             topology_snapshot = TopologySnapshot(**message_data)
 
-            logger.info(
-                f"📡 Received topology snapshot (timestamp: {topology_snapshot.timestamp})"
-            )
+            logger.info(f"📡 Received topology snapshot (id: {topology_snapshot.state_id}, timestamp: {topology_snapshot.timestamp})")
 
             # Update real topology
-            self.real_topology = topology_snapshot.topology
+            self.topology_snapshot = topology_snapshot
 
-            # Update the calibrated real topology as well (initially the same, can be modified by sim topology updates from calibrator)
-            self.calibrated_real_topology = copy.deepcopy(self.real_topology)
+            # Update the calibrated topology as well (initially the same, can be modified by sim topology updates from calibrator)
+            self.calibrated_topology = copy.deepcopy(self.topology_snapshot.topology)
 
             # Log update details
             total_hosts = sum(host.count for cluster in topology_snapshot.topology.clusters for host in cluster.hosts)
@@ -458,19 +456,26 @@ class SimulationService:
             message_data: Raw message data from Kafka (raw Topology, not TopologySnapshot)
         """
         try:
-            # Parse into Topology model (not TopologySnapshot)
-            # TODO: In the future, maybe only the calibrationFactor is being passed to here instead of the full topology
-            topology = Topology(**message_data)
+            topology_snapshot = TopologySnapshot(**message_data)
 
-            logger.info(
-                f"🔄 Received calibrated real topology update: {len(topology.clusters)} cluster(s)"
-            )
+            logger.info(f"📡 Received calibrated topology update (id: {topology_snapshot.state_id})")
 
-            # Update calibrated real topology
-            self.calibrated_real_topology = topology
+            if self.topology_snapshot is None:
+                logger.warning("Received calibrated topology update but no existing topology snapshot available, skipping update")
+                return
+
+            if topology_snapshot.state_id != self.topology_snapshot.state_id:
+                logger.warning("State ID mismatch between calibrated topology update and current topology snapshot, skipping update")
+                return
+
+
+            logger.info(f"⚙️ Received calibrated topology update: {len(topology_snapshot.topology.clusters)} cluster(s)")
+
+            # Update calibrated topology
+            self.calibrated_topology = topology_snapshot.topology
 
             # Log update details
-            total_hosts = sum(host.count for cluster in topology.clusters for host in cluster.hosts)
+            total_hosts = sum(host.count for cluster in topology_snapshot.topology.clusters for host in cluster.hosts)
             logger.info(f"   Total hosts: {total_hosts}")
 
         except Exception as e:

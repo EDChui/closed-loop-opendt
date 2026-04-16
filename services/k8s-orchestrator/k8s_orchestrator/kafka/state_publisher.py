@@ -67,9 +67,11 @@ class KafkaStatePublisher(StatePublisher[K8sSystemSnapshot]):
             return False
 
     async def publish_system_state(self, state: ObservedState[K8sSystemSnapshot], cause: str) -> None:
+        state_id = state.state_id
         topology = state.snapshot.topology
         timestamp = TimeUtils.to_datetime(state.observed_at)
         topology_snapshot = TopologySnapshot(
+            state_id=state_id,
             timestamp=timestamp,
             topology=topology
         )
