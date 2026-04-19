@@ -401,6 +401,13 @@
               {
                 "id": "displayName",
                 "value": "No-op"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#5794F2",
+                  "mode": "fixed"
+                }
               }
             ]
           },
@@ -413,6 +420,13 @@
               {
                 "id": "displayName",
                 "value": "Scale Up"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
               }
             ]
           },
@@ -425,6 +439,13 @@
               {
                 "id": "displayName",
                 "value": "Scale Down"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F2495C",
+                  "mode": "fixed"
+                }
               }
             ]
           }
