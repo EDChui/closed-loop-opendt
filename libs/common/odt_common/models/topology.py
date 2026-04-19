@@ -147,6 +147,7 @@ class TopologySnapshot(BaseModel):
     Wraps a Topology with a timestamp indicating when it was captured/published.
     """
 
+    state_id: str = Field(..., description="Unique identifier for this topology snapshot")
     timestamp: datetime = Field(
         ..., description="When this topology snapshot was captured (ISO 8601 format)"
     )

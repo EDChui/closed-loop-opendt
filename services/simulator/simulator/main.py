@@ -33,7 +33,7 @@ class SimulationService:
 
     The service:
     1. Listens to dc.workload (tasks), dc.topology (topology snapshots), 
-       sim.batch (simulation batches) and sim.topology (calibrated real topology updates) Kafka topics
+       sim.batch (simulation batches) and sim.calibration (calibrated real topology updates) Kafka topics
     2. Accumulates tasks chronologically
     3. Triggers simulations at specified frequency (simulated time)
     """
@@ -45,7 +45,7 @@ class SimulationService:
         topology_topic: str,
         sim_batch_topic: str,
         sim_batch_report_topic: str,
-        sim_topology_topic: str,
+        sim_calibration_topic: str,
         simulation_frequency_minutes: int,
         max_parallel_workers: int,
         speed_factor: float,
@@ -61,7 +61,7 @@ class SimulationService:
             topology_topic: Kafka topic name for topology updates (dc.topology)
             sim_batch_topic: Kafka topic name for simulation batch triggers (sim.batch)
             sim_batch_report_topic: Kafka topic name for simulation batch reports (sim.batch.report)
-            sim_topology_topic: Kafka topic name for calibrated real topology updates (sim.topology)
+            sim_calibration_topic: Kafka topic name for calibrated real topology updates (sim.calibration)
             simulation_frequency_minutes: Simulation frequency in simulated time minutes
             speed_factor: Configured simulation speed multiplier
             run_output_dir: Base directory for run outputs
@@ -74,7 +74,7 @@ class SimulationService:
         self.topology_topic = topology_topic
         self.sim_batch_topic = sim_batch_topic
         self.sim_batch_report_topic = sim_batch_report_topic
-        self.calibration_topic = sim_topology_topic                                     # TODO: Rename to calibration_topic for clarity
+        self.calibration_topic = sim_calibration_topic
         self.simulation_frequency = timedelta(minutes=simulation_frequency_minutes)
         self.max_parallel_workers = max_parallel_workers
         self.speed_factor = speed_factor
@@ -92,7 +92,7 @@ class SimulationService:
         self.result_analyzer = SimulationResultAnalyzer()
 
         # Initialize Kafka consumer
-        topics = [workload_topic, topology_topic, sim_batch_topic, sim_topology_topic]
+        topics = [workload_topic, topology_topic, sim_batch_topic, sim_calibration_topic]
         self.consumer = get_kafka_consumer(
             topics=topics,
             group_id=consumer_group,
@@ -118,8 +118,8 @@ class SimulationService:
         )
 
         # Topology state
-        self.real_topology: Topology | None = None
-        self.calibrated_real_topology: Topology | None = None
+        self.topology_snapshot: TopologySnapshot | None = None
+        self.calibrated_topology: Topology | None = None
         self.sim_batch: SimulationBatch | None = None
         self.sim_batch_received_at: float | None = None
 
@@ -134,7 +134,7 @@ class SimulationService:
 
         logger.info(f"Initialized SimulationService with run ID: {run_id}")
         logger.info(f"Consumer group: {consumer_group}")
-        logger.info(f"Subscribed: {workload_topic}, {topology_topic}, {sim_topology_topic}")
+        logger.info(f"Subscribed: {workload_topic}, {topology_topic}, {sim_calibration_topic}")
         logger.info(
             f"Simulation frequency: {simulation_frequency_minutes} minutes (simulated time)"
         )
@@ -282,7 +282,7 @@ class SimulationService:
             logger.warning("OpenDC runner not available, skipping simulation")
             return
 
-        if not self.calibrated_real_topology:
+        if not self.calibrated_topology:
             logger.warning("No topology available, skipping simulation")
             return
         
@@ -320,7 +320,7 @@ class SimulationService:
             aligned_simulated_time=aligned_simulated_time,
             tasks=all_tasks,
             simulation_batch=self.sim_batch,
-            calibrated_real_topology=self.calibrated_real_topology,
+            calibrated_topology=self.calibrated_topology,
         )
 
         # Process and publish simulation batch report to Kafka
@@ -405,15 +405,13 @@ class SimulationService:
             # Parse into TopologySnapshot model
             topology_snapshot = TopologySnapshot(**message_data)
 
-            logger.info(
-                f"📡 Received topology snapshot (timestamp: {topology_snapshot.timestamp})"
-            )
+            logger.info(f"📡 Received topology snapshot (id: {topology_snapshot.state_id}, timestamp: {topology_snapshot.timestamp})")
 
             # Update real topology
-            self.real_topology = topology_snapshot.topology
+            self.topology_snapshot = topology_snapshot
 
-            # Update the calibrated real topology as well (initially the same, can be modified by sim topology updates from calibrator)
-            self.calibrated_real_topology = copy.deepcopy(self.real_topology)
+            # Update the calibrated topology as well (initially the same, can be modified by sim topology updates from calibrator)
+            self.calibrated_topology = copy.deepcopy(self.topology_snapshot.topology)
 
             # Log update details
             total_hosts = sum(host.count for cluster in topology_snapshot.topology.clusters for host in cluster.hosts)
@@ -458,19 +456,26 @@ class SimulationService:
             message_data: Raw message data from Kafka (raw Topology, not TopologySnapshot)
         """
         try:
-            # Parse into Topology model (not TopologySnapshot)
-            # TODO: In the future, maybe only the calibrationFactor is being passed to here instead of the full topology
-            topology = Topology(**message_data)
+            topology_snapshot = TopologySnapshot(**message_data)
 
-            logger.info(
-                f"🔄 Received calibrated real topology update: {len(topology.clusters)} cluster(s)"
-            )
+            logger.info(f"📡 Received calibrated topology update (id: {topology_snapshot.state_id})")
 
-            # Update calibrated real topology
-            self.calibrated_real_topology = topology
+            if self.topology_snapshot is None:
+                logger.warning("Received calibrated topology update but no existing topology snapshot available, skipping update")
+                return
+
+            if topology_snapshot.state_id != self.topology_snapshot.state_id:
+                logger.warning("State ID mismatch between calibrated topology update and current topology snapshot, skipping update")
+                return
+
+
+            logger.info(f"⚙️ Received calibrated topology update: {len(topology_snapshot.topology.clusters)} cluster(s)")
+
+            # Update calibrated topology
+            self.calibrated_topology = topology_snapshot.topology
 
             # Log update details
-            total_hosts = sum(host.count for cluster in topology.clusters for host in cluster.hosts)
+            total_hosts = sum(host.count for cluster in topology_snapshot.topology.clusters for host in cluster.hosts)
             logger.info(f"   Total hosts: {total_hosts}")
 
         except Exception as e:
@@ -539,7 +544,7 @@ def main():
     topology_topic = config.kafka.topics["topology"].name
     sim_batch_topic = config.kafka.topics["sim_batch"].name
     sim_batch_report_topic = config.kafka.topics["sim_batch_report"].name
-    sim_topology_topic = config.kafka.topics["sim_topology"].name
+    sim_calibration_topic = config.kafka.topics["sim_calibration"].name
 
     # Get simulator configuration
     simulation_frequency_minutes = config.services.simulator.simulation_frequency_minutes
@@ -552,7 +557,7 @@ def main():
     logger.info(f"Topology topic: {topology_topic}")
     logger.info(f"Sim batch topic: {sim_batch_topic}")
     logger.info(f"Sim batch report topic: {sim_batch_report_topic}")
-    logger.info(f"Simulated topology topic: {sim_topology_topic}")
+    logger.info(f"Simulation calibration topic: {sim_calibration_topic}")
     logger.info(f"Simulation frequency: {simulation_frequency_minutes} minutes")
     logger.info(f"Speed factor: {speed_factor}x")
     logger.info(f"Data directory: {run_output_dir}")
@@ -581,7 +586,7 @@ def main():
                 topology_topic=topology_topic,
                 sim_batch_topic=sim_batch_topic,
                 sim_batch_report_topic=sim_batch_report_topic,
-                sim_topology_topic=sim_topology_topic,
+                sim_calibration_topic=sim_calibration_topic,
                 simulation_frequency_minutes=simulation_frequency_minutes,
                 speed_factor=speed_factor,
                 max_parallel_workers=max_parallel_workers,

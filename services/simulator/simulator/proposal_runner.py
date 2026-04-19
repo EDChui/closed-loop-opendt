@@ -152,7 +152,7 @@ class ProposalRunner:
         aligned_simulated_time: datetime,
         tasks: list[Task],
         simulation_batch: SimulationBatch,
-        calibrated_real_topology: Topology,
+        calibrated_topology: Topology,
     ) -> list[ProposalExecutionResult]:
         proposals = copy.deepcopy(simulation_batch.proposals)
         last_task_time = max((task.submission_time for task in tasks))
@@ -172,8 +172,8 @@ class ProposalRunner:
             # Assume the first proposal is always the current system state
             # so we replace its topology with the calibrated real topology to ensure the simulator 
             # is using the most accurate representation of reality for the baseline
-            if proposal_idx == 0 and calibrated_real_topology is not None:
-                proposal.candidate_topology = copy.deepcopy(calibrated_real_topology)
+            if proposal_idx == 0 and calibrated_topology is not None:
+                proposal.candidate_topology = copy.deepcopy(calibrated_topology)
 
             can_reuse = False   # TODO: Cache mechanism
             if can_reuse:

@@ -214,15 +214,15 @@ async def update_topology(
     # Topology already validated by Pydantic
     logger.info(f"Topology validated: {len(topology.clusters)} cluster(s)")
 
-    # Get sim.topology topic name from config
-    sim_topology_topic = app.state.config.kafka.topics.get("sim_topology")
-    if not sim_topology_topic:
-        logger.error("sim.topology topic not configured")
-        raise HTTPException(status_code=500, detail="sim.topology topic not configured")
+    # Get sim.calibration topic name from config
+    sim_calibration_topic = app.state.config.kafka.topics.get("sim_calibration")
+    if not sim_calibration_topic:
+        logger.error("sim.calibration topic not configured")
+        raise HTTPException(status_code=500, detail="sim.calibration topic not configured")
 
-    topic_name = sim_topology_topic.name
+    topic_name = sim_calibration_topic.name
 
-    # Publish to sim.topology Kafka topic with compacted key
+    # Publish to sim.calibration Kafka topic with compacted key
     try:
         send_message(
             producer=app.state.kafka_producer,
@@ -285,7 +285,7 @@ async def update_objectives(
         logger.error("Configuration not loaded")
         raise HTTPException(status_code=500, detail="Configuration not loaded")
     
-    # Get sim.topology topic name from config
+    # Get dc.objectives topic name from config
     objectives_topic = app.state.config.kafka.topics.get("objectives")
     if not objectives_topic:
         logger.error("dc.objectives topic not configured")
