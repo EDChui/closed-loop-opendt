@@ -1,19 +1,21 @@
-from dataclasses import dataclass
 from datetime import UTC, datetime
 import logging
+import requests
 import threading
 
 from odt_common import Consumption
+from odt_common.config import ScaphandreSourceConfig
 from k8s_observability.models import NodePowerReading
 from k8s_observability.persistence import NodePowerReadingRepository, build_engine, build_session_factory
+from k8s_observability.scaphandre.energy_reader import ScaphandreEnergyReader, NodeEnergyCounter
 
-from k8s_observer.scaphandre.energy_reader import ScaphandreEnergyReader, NodeEnergyCounter
 from k8s_observer.producers.base import BaseProducer
 
 logger = logging.getLogger(__name__)
 
 UJ_PER_JOULE = 1_000_000
 DEFAULT_POLL_INTERVAL_SECONDS = 15
+# Assume all nodes have the same RAPL energy counter range
 # Verify this exact number on your target machine:
 # cat /sys/class/powercap/intel-rapl:0/max_energy_range_uj
 RAPL_MAX_ENERGY_RANGE_UJ = 262_143_328_850
@@ -24,8 +26,8 @@ class NodePowerProducer(BaseProducer):
         self,
         kafka_bootstrap_servers: str,
         topic: str,
-        scaphandre_root: str,
-        node_names: list[str],
+        scaphandre_base_path: str,
+        scaphandre_sources: list[ScaphandreSourceConfig],
         database_url: str,
         poll_interval_seconds: int = DEFAULT_POLL_INTERVAL_SECONDS,
         start_barrier: threading.Barrier | None = None,
@@ -36,7 +38,7 @@ class NodePowerProducer(BaseProducer):
             name="NodePowerProducer",
             start_barrier=start_barrier,
         )
-        self.node_names = node_names
+        self.scaphandre_sources = scaphandre_sources
         self.database_url = database_url
         self.poll_interval_seconds = poll_interval_seconds
 
@@ -45,18 +47,59 @@ class NodePowerProducer(BaseProducer):
         self.db_session = self.db_session_factory()
         self.node_power_repo = NodePowerReadingRepository(self.db_session)
 
-        self.energy_reader = ScaphandreEnergyReader(scaphandre_root)
+        self.energy_reader = ScaphandreEnergyReader(scaphandre_base_path)
         self.prev_energy: dict[str, NodeEnergyCounter] = {}
+
+    def _read_remote_energy_counter(self, source: ScaphandreSourceConfig, capture_time: datetime) -> NodeEnergyCounter:
+        url = source.url
+        if not url:
+            raise ValueError(f"Remote Scaphandre source {source.name} is missing URL for energy reading")
+        
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+
+            data = response.json()
+            energy_uj = data.get("energy_uj")
+            if energy_uj is None:
+                raise ValueError(f"Energy reading from {url} for node {source.name} is missing 'energy_uj' field")
+            return NodeEnergyCounter(
+                node_name=source.name,
+                capture_time=capture_time,
+                energy_uj=int(energy_uj),
+                source=source.url
+            )
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout while reading remote energy counter from {url} for node {source.name}")
+            raise
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP error while reading remote energy counter from {url} for node {source.name}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to read remote energy counter from {url} for node {source.name}: {e}", exc_info=True)
+            raise
 
     def _capture_current_energy(self, capture_time: datetime) -> dict[str, NodeEnergyCounter]:
         current_energy = {}
 
-        for node_name in self.node_names:
-            try:
-                counter = self.energy_reader.read_energy_counter(node_name, capture_time)
-                current_energy[node_name] = counter
-            except Exception as e:
-                logger.error(f"Failed to capture energy for node {node_name}: {e}", exc_info=True)
+        for scaphandre_source in self.scaphandre_sources:
+            if scaphandre_source.access_mode == "local":
+                try:
+                    node_name = scaphandre_source.name
+                    counter = self.energy_reader.read_energy_counter(node_name, capture_time)
+                    current_energy[node_name] = counter
+                except Exception as e:
+                    logger.error(f"Failed to capture energy for node {node_name}: {e}", exc_info=True)
+                    continue
+            elif scaphandre_source.access_mode == "remote":
+                try:
+                    counter = self._read_remote_energy_counter(scaphandre_source, capture_time)
+                    current_energy[scaphandre_source.name] = counter
+                except Exception as e:
+                    logger.error(f"Failed to capture remote energy for node {scaphandre_source.name}: {e}", exc_info=True)
+                    continue
+            else:
+                logger.warning(f"Unknown access mode {scaphandre_source.access_mode} for Scaphandre source {scaphandre_source.name}")
                 continue
         return current_energy
     
@@ -73,7 +116,8 @@ class NodePowerProducer(BaseProducer):
         current_energy: dict[str, NodeEnergyCounter] = self._capture_current_energy(capture_time)
         power_readings: list[NodePowerReading] = []
 
-        for node in self.node_names:
+        for scaphandre_source in self.scaphandre_sources:
+            node = scaphandre_source.name
             prev_counter = self.prev_energy.get(node)
             current_counter = current_energy.get(node)
 

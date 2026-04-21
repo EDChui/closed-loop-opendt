@@ -1,17 +1,46 @@
 # OpenDT Default Configuration
 
 global:
-  speed_factor: 1 # 1.0 = Realtime, -1 = Max Speed
+  speed_factor: 1.0 # 1.0 = Realtime, -1 = Max Speed
   calibration_enabled: false
-  cpu_frequency_mhz: 2400
+  cpu_frequency_mhz: 2400 # Assume all nodes have the same CPU frequency
 
 services:
-  k8s-observer:
-    namespace: "exp"
-    heartbeat_frequency_minutes: 1
-
   k8s-orchestrator:
-    refresh_interval_seconds: 47
+    refresh_interval_seconds: 30
+
+  k8s-observer:
+    namespace: "default"
+    heartbeat_frequency_minutes: 1
+    resource_collection_interval_seconds: 15
+    node_power_collection_interval_seconds: 15
+    scaphandre_sources:
+      - name: "cloud0_echui"
+        access_mode: "remote"
+        url: "http://node1:8088/scaphandre/cloud0_echui"
+      - name: "cloud1_echui"
+        access_mode: "remote"
+        url: "http://node1:8088/scaphandre/cloud1_echui"
+      - name: "cloud2_echui"
+        access_mode: "remote"
+        url: "http://node2:8088/scaphandre/cloud2_echui"
+      - name: "cloud3_echui"
+        access_mode: "remote"
+        url: "http://node2:8088/scaphandre/cloud3_echui"
+      - name: "cloud4_echui"
+        access_mode: "remote"
+        url: "http://node3:8088/scaphandre/cloud4_echui"
+      - name: "cloud5_echui"
+        access_mode: "remote"
+        url: "http://node3:8088/scaphandre/cloud5_echui"
+      - name: "cloud6_echui"
+        access_mode: "remote"
+        url: "http://node4:8088/scaphandre/cloud6_echui"
+      - name: "cloud7_echui"
+        access_mode: "remote"
+        url: "http://node4:8088/scaphandre/cloud7_echui"
+      - name: "cloud_controller_echui"
+        access_mode: "local"
 
   simulator:
     simulation_frequency_minutes: 5

@@ -126,16 +126,16 @@ services:
       context: .
       dockerfile: services/k8s-observer/Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME:-opendt}-k8s-observer
+    # Required to run as root for accessing Scaphandre data
     user: "0:0"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CONFIG_FILE: /app/config.yaml
       PYTHONUNBUFFERED: 1
       # Environment variables
-      NODE_NAMES: cloud0_echui,cloud1_echui,cloud2_echui
       KUBECONFIG: /kube/config
       PROMETHEUS_URL: http://host.docker.internal:9091
-      SCAPHANDRE_ROOT: /hostfs/var/lib/libvirt/scaphandre
+      SCAPHANDRE_BASE_PATH: /hostfs/var/lib/libvirt/scaphandre
       DATABASE_URL: postgresql+psycopg://opendt:opendt@postgres:5432/opendt
     volumes:
       # Mount source code for hot reload
@@ -147,7 +147,7 @@ services:
       # Kubeconfig for accessing Kubernetes API
       - ${HOME}/.kube:/kube:ro
       # Mount host Scaphandre data read-only for VM power monitoring
-      - ${SCAPHANDRE_DATA_DIR:-/var/lib/libvirt/scaphandre}:/hostfs/var/lib/libvirt/scaphandre:ro
+      - /var/lib/libvirt/scaphandre:/hostfs/var/lib/libvirt/scaphandre:ro
     depends_on:
       kafka-init:
         condition: service_completed_successfully

@@ -16,10 +16,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logging.getLogger("kafka").setLevel(logging.WARNING)
 
-DEFAULT_NODE_NAMES = "cloud0_echui,cloud1_echui,cloud2_echui"
 DEFAULT_KUBECONFIG_PATH = "/kube/config"
 DEFAULT_PROMETHEUS_URL = "http://host.docker.internal:9090"
-DEFAULT_SCAPHANDRE_ROOT = "/hostfs/var/lib/libvirt/scaphandre"
+DEFAULT_SCAPHANDRE_BASE_PATH = "/hostfs/var/lib/libvirt/scaphandre"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://opendt:opendt@postgres:5432/opendt"
 
 
@@ -53,8 +52,8 @@ class K8sObserverOrchestrator:
         power_topic: str,
         cpu_frequency_mhz: int,
         heartbeat_frequency_minutes: int = 1,
-        resource_collector_frequency_seconds: int = 15,
-        node_power_frequency_seconds: int = 15,
+        resource_collection_interval_seconds: int = 15,
+        node_power_collection_interval_seconds: int = 15,
     ) -> None:
         """Start all workers.
         
@@ -101,7 +100,7 @@ class K8sObserverOrchestrator:
             resource_type=workload_context.resource_type,
             prometheus_url=workload_context.prometheus_url,
             database_url=workload_context.database_url,
-            collector_frequency_seconds=resource_collector_frequency_seconds,
+            collector_frequency_seconds=resource_collection_interval_seconds,
             start_barrier=start_barrier,
         )
         self.resource_usage_collector.start()
@@ -111,10 +110,10 @@ class K8sObserverOrchestrator:
         self.node_power_producer = NodePowerProducer(
             kafka_bootstrap_servers=kafka_bootstrap_servers,
             topic=power_topic,
-            node_names=workload_context.node_names,
-            scaphandre_root=workload_context.scaphandre_root,
+            scaphandre_sources=workload_context.scaphandre_sources,
+            scaphandre_base_path=workload_context.scaphandre_base_path,
             database_url=workload_context.database_url,
-            poll_interval_seconds=node_power_frequency_seconds,
+            poll_interval_seconds=node_power_collection_interval_seconds,
             start_barrier=start_barrier,
         )
         self.node_power_producer.start()
@@ -174,10 +173,6 @@ class K8sObserverOrchestrator:
 
         logger.info("=" * 70 + "\n✅ All workers stop requested\n" + "=" * 70)
     
-    def _parse_node_names(self) -> list[str]:
-        node_names_raw = os.getenv("NODE_NAMES", DEFAULT_NODE_NAMES)
-        return [name.strip() for name in node_names_raw.split(",") if name.strip()]
-
     def run(self) -> int:
         """Run the orchestrator.
 
@@ -190,40 +185,39 @@ class K8sObserverOrchestrator:
             config = load_config_from_env()
 
             # Read environment variables with defaults
-            node_names = self._parse_node_names()
             kubeconfig_path = os.getenv("KUBECONFIG", DEFAULT_KUBECONFIG_PATH)
             prometheus_url = os.getenv("PROMETHEUS_URL", DEFAULT_PROMETHEUS_URL)
-            scaphandre_root = os.getenv("SCAPHANDRE_ROOT", DEFAULT_SCAPHANDRE_ROOT)
+            scaphandre_base_path = os.getenv("SCAPHANDRE_BASE_PATH", DEFAULT_SCAPHANDRE_BASE_PATH)
             database_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 
-            logger.info(f"Node names: {node_names}")
             logger.info(f"Kubeconfig path: {kubeconfig_path}")
             logger.info(f"Prometheus URL: {prometheus_url}")
-            logger.info(f"Scaphandre root: {scaphandre_root}")
+            logger.info(f"Scaphandre base path: {scaphandre_base_path}")
             logger.info(f"Database URL: {database_url}")
 
             # Read values from config
             namespace = config.services.k8s_observer.namespace
             heartbeat_frequency_minutes = config.services.k8s_observer.heartbeat_frequency_minutes
-            resource_collector_frequency_seconds = config.services.k8s_observer.resource_collector_frequency_seconds
-            node_power_frequency_seconds = config.services.k8s_observer.node_power_frequency_seconds
+            resource_collection_interval_seconds = config.services.k8s_observer.resource_collection_interval_seconds
+            node_power_collection_interval_seconds = config.services.k8s_observer.node_power_collection_interval_seconds
             cpu_frequency_mhz = config.global_config.cpu_frequency_mhz
+            scaphandre_sources = config.services.k8s_observer.scaphandre_sources
 
             logger.info(f"Namespace: {namespace}")
             logger.info(f"Heartbeat frequency (minutes): {heartbeat_frequency_minutes}")
-            logger.info(f"Resource collector frequency (seconds): {resource_collector_frequency_seconds}")
-            logger.info(f"Node power frequency (seconds): {node_power_frequency_seconds}")
+            logger.info(f"Resource collector frequency (seconds): {resource_collection_interval_seconds}")
+            logger.info(f"Node power frequency (seconds): {node_power_collection_interval_seconds}")
             logger.info(f"CPU frequency (MHz): {cpu_frequency_mhz}")
 
             # Create workload context
             # Always use "pod" resource type as it is the most fundamental unit in K8s
             workload_context = K8sWorkloadContext(
-                node_names=node_names,
+                scaphandre_sources=scaphandre_sources,
                 kubeconfig_path=kubeconfig_path,
                 namespace=namespace,
                 resource_type="pod",
                 prometheus_url=prometheus_url,
-                scaphandre_root=scaphandre_root,
+                scaphandre_base_path=scaphandre_base_path,
                 database_url=database_url,
             )
 
@@ -247,8 +241,8 @@ class K8sObserverOrchestrator:
                 power_topic=power_topic,
                 cpu_frequency_mhz=cpu_frequency_mhz,
                 heartbeat_frequency_minutes=heartbeat_frequency_minutes,
-                resource_collector_frequency_seconds=resource_collector_frequency_seconds,
-                node_power_frequency_seconds=node_power_frequency_seconds,
+                resource_collection_interval_seconds=resource_collection_interval_seconds,
+                node_power_collection_interval_seconds=node_power_collection_interval_seconds,
             )
 
             # Wait for completion
