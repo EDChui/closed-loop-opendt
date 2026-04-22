@@ -52,16 +52,28 @@ class K8sProposalGenerator(ProposalGenerator):
 
         new_topology = copy.deepcopy(snapshot.topology)
         details = {"from": {}, "to": {}}
+        changed = False
+
         for host in new_topology.clusters[0].hosts:
             node_type = host.name
             current_count = host.count
             requested_count = request_node_count.get(node_type, current_count)
+            
             # Ensure the requested count does not exceed the maximum available node count in the snapshot and is not negative
             requested_count = min(snapshot.max_available_node_count.get(node_type, 0), requested_count)
             requested_count = max(0, requested_count)
+
+            host.count = requested_count
             details["from"][node_type] = current_count
             details["to"][node_type] = requested_count
-            host.count = requested_count
+
+            if requested_count != current_count:
+                changed = True
+
+        if not changed:
+            logger.info(f"Requested node count is the same as the current snapshot for state {state_id}. No proposal will be generated.")
+            return None
+
         proposal_id = f"proposal-{state_id}-change-node-count-" + "-".join(f"{node_type[:2]}{count}" for node_type, count in request_node_count.items())
         decision = Decision(
             action=K8sActionKind.CHANGE_NODE_COUNT,
