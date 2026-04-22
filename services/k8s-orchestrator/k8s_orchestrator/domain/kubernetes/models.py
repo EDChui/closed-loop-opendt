@@ -7,12 +7,13 @@ from k8s_orchestrator.domain import SystemSnapshot
 
 class K8sActionKind(StrEnum):
     NO_OP = "no_op"
-    SCALE_UP = "scale_up"
-    SCALE_DOWN = "scale_down"
+    CHANGE_NODE_COUNT = "change_node_count"
 
 
 @dataclass(frozen=True)
 class K8sSystemSnapshot(SystemSnapshot):
+    node_types = ["cloud", "edge", "endpoint"]
+
     topology: Topology
     max_available_node_count: dict[str, int]
 

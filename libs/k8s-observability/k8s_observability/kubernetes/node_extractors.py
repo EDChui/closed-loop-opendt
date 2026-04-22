@@ -48,8 +48,8 @@ class K8sNodeExtractor:
         return node_type
 
     @staticmethod
-    def is_worker_node_usable(node: Any) -> bool:
-        """Usable worker means it's a worker node that is ready, available, and schedulable"""
+    def is_worker_node_in_use(node: Any) -> bool:
+        """In use worker node means it's a worker node that is ready, available, and schedulable"""
         return K8sNodeExtractor.is_worker_node(node) \
             and K8sNodeExtractor.is_node_ready(node) \
             and K8sNodeExtractor.is_node_available(node) \
@@ -92,3 +92,21 @@ class K8sNodeExtractor:
             architecture=architecture,
             operating_system=operating_system
         )
+    
+    @staticmethod
+    def get_available_worker_nodes(nodes: list, type_filter: str | None = None) -> list:
+        available_nodes = []
+        for node in nodes:
+            if K8sNodeExtractor.is_worker_node(node) and K8sNodeExtractor.is_node_available(node):
+                if type_filter is None or K8sNodeExtractor.get_node_type(node) == type_filter:
+                    available_nodes.append(node)
+        return available_nodes
+
+    @staticmethod
+    def get_in_use_worker_nodes(nodes: list, type_filter: str | None = None) -> list:
+        in_use_nodes = []
+        for node in nodes:
+            if K8sNodeExtractor.is_worker_node_in_use(node):
+                if type_filter is None or K8sNodeExtractor.get_node_type(node) == type_filter:
+                    in_use_nodes.append(node)
+        return in_use_nodes

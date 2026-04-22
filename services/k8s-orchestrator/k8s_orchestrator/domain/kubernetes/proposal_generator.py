@@ -11,37 +11,61 @@ logger = logging.getLogger(__name__)
 
 
 class K8sProposalGenerator(ProposalGenerator):
-    def generate_scale_up_proposal(self, snapshot: K8sSystemSnapshot, state_id: str) -> Optional[Proposal]:
-        new_topology = copy.deepcopy(snapshot.topology)
-        current_node_count = new_topology.clusters[0].hosts[0].count
-        target_node_count = min(snapshot.max_available_node_count["cloud"], current_node_count + 1)
-        if target_node_count == current_node_count:
-            return None
-        proposal_id = f"proposal-{state_id}-scale-up"
-        new_topology.clusters[0].hosts[0].count = target_node_count
-        decision = Decision(
-            action=K8sActionKind.SCALE_UP,
-            details={"target_node_count": target_node_count}
-        )
-        proposal = Proposal(
-            proposal_id=proposal_id,
-            based_on_state_id=state_id,
-            candidate_topology=new_topology,
-            decision=decision
-        )
-        return proposal
+    def _get_requested_node_count(self, snapshot: K8sSystemSnapshot, relative_node_count_change: dict[str, int]) -> dict[str, int]:
+        """
+        Calculates the requested node count based on the current snapshot and the relative change.
+        
+        Example:
+        - current snapshot has 3 cloud nodes, 2 edge nodes, and 1 endpoint node
+        - relative_node_count_change = {"cloud": -1, "edge": 2} means we want to remove 1 cloud node and add 2 edge nodes compared to the current snapshot.
+        - returns {"cloud": 2, "edge": 4, "endpoint": 1}
+        """
+        requested_node_count = {}
+        for host in snapshot.topology.clusters[0].hosts:
+            node_type = host.name
+            current_count = host.count
+            change = relative_node_count_change.get(node_type, 0)
+            if change == 0:
+                requested_node_count[node_type] = current_count
+                continue
+            requested_count = current_count + change
+            # Ensure the requested count does not exceed the maximum available node count in the snapshot and is not negative
+            requested_count = min(snapshot.max_available_node_count.get(node_type, 0), requested_count)
+            requested_count = max(0, requested_count)
+            requested_node_count[node_type] = requested_count
+        return requested_node_count
 
-    def generate_scale_down_proposal(self, snapshot: K8sSystemSnapshot, state_id: str) -> Optional[Proposal]:
-        new_topology = copy.deepcopy(snapshot.topology)
-        current_node_count = new_topology.clusters[0].hosts[0].count
-        target_node_count = max(1, current_node_count - 1)
-        if target_node_count == current_node_count:
+    def generate_change_node_count_proposal(self, snapshot: K8sSystemSnapshot, state_id: str, request_node_count: dict[str, int]) -> Optional[Proposal]:
+        """Generates a proposal to change the node count based on the requested node count.
+        
+        Example:
+        - current snapshot has 3 cloud nodes, 2 edge nodes, and 1 endpoint node
+        - request_node_count = {"cloud": 2, "edge": 4} means we want to change to 2 cloud nodes, 4 edge nodes, and keep the same count for endpoint nodes as it is not specified in the request.
+        - generates a proposal to change the node count to {"cloud": 2, "edge": 4, "endpoint": 1}
+        """
+
+        total_requested_node_count = sum(request_node_count.values())
+        # Ensure at least 1 node is requested to avoid generating proposals that would remove all nodes
+        if total_requested_node_count <= 0:
+            logger.warning(f"Received request to change node count with non-positive total count ({total_requested_node_count}). No proposal will be generated.")
             return None
-        proposal_id = f"proposal-{state_id}-scale-down"
-        new_topology.clusters[0].hosts[0].count = target_node_count
+
+        new_topology = copy.deepcopy(snapshot.topology)
+        details = {"from": {}, "to": {}}
+        for host in new_topology.clusters[0].hosts:
+            node_type = host.name
+            current_count = host.count
+            requested_count = request_node_count.get(node_type, current_count)
+            # Ensure the requested count does not exceed the maximum available node count in the snapshot and is not negative
+            requested_count = min(snapshot.max_available_node_count.get(node_type, 0), requested_count)
+            requested_count = max(0, requested_count)
+            details["from"][node_type] = current_count
+            details["to"][node_type] = requested_count
+            host.count = requested_count
+        proposal_id = f"proposal-{state_id}-change-node-count-" + "-".join(f"{node_type[:2]}{count}" for node_type, count in request_node_count.items())
         decision = Decision(
-            action=K8sActionKind.SCALE_DOWN,
-            details={"target_node_count": target_node_count}
+            action=K8sActionKind.CHANGE_NODE_COUNT,
+            details=details
         )
         proposal = Proposal(
             proposal_id=proposal_id,
@@ -71,16 +95,19 @@ class K8sProposalGenerator(ProposalGenerator):
         )
         proposals.append(proposal)
 
-        # Scale up proposals
-        scale_up_proposal = self.generate_scale_up_proposal(current_snapshot, state.state_id)
-        if scale_up_proposal is not None:
-            proposals.append(scale_up_proposal)
+        # TODO: Generate more proposals with different combinations
+        # +1 Cloud node proposal
+        request_node_count = self._get_requested_node_count(current_snapshot, relative_node_count_change={"cloud": 1})
+        scale_up_cloud_proposal = self.generate_change_node_count_proposal(current_snapshot, state.state_id, request_node_count)
+        if scale_up_cloud_proposal is not None:
+            proposals.append(scale_up_cloud_proposal)
 
-        # Scale down proposals
-        scale_down_proposal = self.generate_scale_down_proposal(current_snapshot, state.state_id)
-        if scale_down_proposal is not None:
-            proposals.append(scale_down_proposal)
-        
+        # -1 Cloud node proposal
+        request_node_count = self._get_requested_node_count(current_snapshot, relative_node_count_change={"cloud": -1})
+        scale_down_cloud_proposal = self.generate_change_node_count_proposal(current_snapshot, state.state_id, request_node_count)
+        if scale_down_cloud_proposal is not None:
+            proposals.append(scale_down_cloud_proposal)
+
         simulationBatch = SimulationBatch(
             batch_id=batch_id,
             based_on_state_id=state.state_id,

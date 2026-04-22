@@ -38,7 +38,7 @@ class K8sSystemAdapter(SystemPort):
         grouped_shapes: dict[K8sNodeShape, int] = defaultdict(int)
 
         for node in nodes:
-            if not K8sNodeExtractor.is_worker_node_usable(node):
+            if not K8sNodeExtractor.is_worker_node_in_use(node):
                 continue
 
             shape = K8sNodeExtractor.get_node_shape(node)
@@ -59,10 +59,11 @@ class K8sSystemAdapter(SystemPort):
         # TODO: (Low priority) Temporary hardcoded power source
         power_source = PowerSource(carbonTracePath="/app/workload/carbon.parquet")
         
+        # Assume for a single node type, all nodes will have the same shape, so we can safely use the node type as the host name in the topology
         hosts: list[Host] = []
         for idx, (shape, count) in enumerate(grouped_shapes.items()):
             host = Host(
-                name=f"H{(idx+1):02d}_{shape.node_type}",
+                name=shape.node_type,
                 count=count,
                 cpu=CPU(coreCount=shape.cpu_count, coreSpeed=self.cpu_frequency_mhz),
                 memory=Memory(memorySize=shape.memory_size_bytes),
@@ -85,15 +86,11 @@ class K8sSystemAdapter(SystemPort):
         nodes = self.core_api.list_node().items
         topology = self._build_topology(nodes)
 
-        cloud_node_count = sum(1 for node in nodes if K8sNodeExtractor.is_worker_node(node) and K8sNodeExtractor.is_node_available(node) and K8sNodeExtractor.get_node_type(node) == "cloud")
-        edge_node_count = sum(1 for node in nodes if K8sNodeExtractor.is_worker_node(node) and K8sNodeExtractor.is_node_available(node) and K8sNodeExtractor.get_node_type(node) == "edge")
-        endpoint_node_count = sum(1 for node in nodes if K8sNodeExtractor.is_worker_node(node) and K8sNodeExtractor.is_node_available(node) and K8sNodeExtractor.get_node_type(node) == "endpoint")
-        
-        max_available_node_count = {
-            "cloud": cloud_node_count,
-            "edge": edge_node_count,
-            "endpoint": endpoint_node_count
-        }
+        max_available_node_count = {}
+
+        for node_type in K8sSystemSnapshot.node_types:
+            available_nodes = K8sNodeExtractor.get_available_worker_nodes(nodes=nodes, type_filter=node_type)
+            max_available_node_count[node_type] = len(available_nodes)
 
         return K8sSystemSnapshot(
             topology=topology,
@@ -114,42 +111,44 @@ class K8sSystemAdapter(SystemPort):
             return
 
         nodes = self.core_api.list_node().items
-        # Available worker nodes: not marked as (mock) unavailable
-        # Current worker nodes: currently schedulable and ready
-        available_worker_nodes = [node for node in nodes if K8sNodeExtractor.is_worker_node(node) and K8sNodeExtractor.is_node_available(node)]
-        current_worker_nodes = [node for node in available_worker_nodes if K8sNodeExtractor.is_worker_node_usable(node)]
-        target_node_count = decision.details.get("target_node_count", len(current_worker_nodes))
+        
+        for node_type in K8sSystemSnapshot.node_types:
+            # Available worker nodes: not marked as (mock) unavailable
+            # Current worker nodes: currently schedulable and ready
+            available_worker_nodes = K8sNodeExtractor.get_available_worker_nodes(nodes=nodes, type_filter=node_type)
+            current_worker_nodes = K8sNodeExtractor.get_in_use_worker_nodes(nodes=available_worker_nodes, type_filter=node_type)
+            target_node_count = decision.details.get("to", {}).get(node_type, len(current_worker_nodes))
 
-        target_node_count = max(1, target_node_count)                               # Ensure at least 1 replica
-        target_node_count = min(target_node_count, len(available_worker_nodes))     # Do not exceed total nodes
+            target_node_count = min(target_node_count, len(available_worker_nodes))     # Do not exceed total nodes
+            target_node_count = max(0, target_node_count)                               # Ensure non-negative count
 
-        if target_node_count > len(current_worker_nodes):
-            # Scale up: Mark additional nodes as schedulable
-            nodes_to_enable = target_node_count - len(current_worker_nodes)
-            for node in available_worker_nodes:
-                if K8sNodeExtractor.is_worker_node_usable(node):
-                    continue  # Skip already usable nodes
-                node_name = K8sNodeExtractor.get_node_name(node)
-                self._set_node_schedulable(node_name, True)
-                nodes_to_enable -= 1
-                if nodes_to_enable <= 0:
-                    break
-        elif target_node_count < len(current_worker_nodes):
-            # Scale down: Mark excess nodes as unschedulable
-            nodes_to_disable = len(current_worker_nodes) - target_node_count
-            for node in reversed(current_worker_nodes):  # Reverse to disable last ones first
-                node_name = K8sNodeExtractor.get_node_name(node)
-                self._set_node_schedulable(node_name, False)
-                nodes_to_disable -= 1
-                if nodes_to_disable <= 0:
-                    break
+            if target_node_count > len(current_worker_nodes):
+                # Scale up: Mark additional nodes as schedulable
+                nodes_to_enable = target_node_count - len(current_worker_nodes)
+                for node in available_worker_nodes:
+                    if K8sNodeExtractor.is_worker_node_in_use(node):
+                        continue  # Skip already usable nodes
+                    node_name = K8sNodeExtractor.get_node_name(node)
+                    self._set_node_schedulable(node_name, True)
+                    nodes_to_enable -= 1
+                    if nodes_to_enable <= 0:
+                        break
+            elif target_node_count < len(current_worker_nodes):
+                # Scale down: Mark excess nodes as unschedulable
+                nodes_to_disable = len(current_worker_nodes) - target_node_count
+                for node in reversed(current_worker_nodes):  # Reverse to disable last ones first
+                    node_name = K8sNodeExtractor.get_node_name(node)
+                    self._set_node_schedulable(node_name, False)
+                    nodes_to_disable -= 1
+                    if nodes_to_disable <= 0:
+                        break
 
     async def apply_decision(self, decision: Decision) -> None:
         logger.info(f"✏️ Applying decision: {decision}")
 
         if decision.action == K8sActionKind.NO_OP:
             logger.info("No-op decision, nothing to apply")
-        elif decision.action in {K8sActionKind.SCALE_UP, K8sActionKind.SCALE_DOWN}:
+        elif decision.action == K8sActionKind.CHANGE_NODE_COUNT:
             self.apply_scaling_decision(decision)
         else:
             logger.warning(f"Received decision with action {decision.action}, but apply_decision is not implemented yet")
