@@ -14,7 +14,7 @@ class K8sActionKind(StrEnum):
 @dataclass(frozen=True)
 class K8sSystemSnapshot(SystemSnapshot):
     topology: Topology
-    max_available_node_count: int
+    max_available_node_count: dict[str, int]
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, K8sSystemSnapshot):

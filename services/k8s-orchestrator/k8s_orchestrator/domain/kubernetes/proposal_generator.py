@@ -14,7 +14,7 @@ class K8sProposalGenerator(ProposalGenerator):
     def generate_scale_up_proposal(self, snapshot: K8sSystemSnapshot, state_id: str) -> Optional[Proposal]:
         new_topology = copy.deepcopy(snapshot.topology)
         current_node_count = new_topology.clusters[0].hosts[0].count
-        target_node_count = min(snapshot.max_available_node_count, current_node_count + 1)
+        target_node_count = min(snapshot.max_available_node_count["cloud"], current_node_count + 1)
         if target_node_count == current_node_count:
             return None
         proposal_id = f"proposal-{state_id}-scale-up"

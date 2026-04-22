@@ -34,8 +34,7 @@ class K8sSystemAdapter(SystemPort):
         config.load_kube_config(config_file=self.kubeconfig_path)
         self.core_api = client.CoreV1Api()
 
-    def _build_topology(self) -> Topology:
-        nodes = self.core_api.list_node().items
+    def _build_topology(self, nodes: list) -> Topology:
         grouped_shapes: dict[K8sNodeShape, int] = defaultdict(int)
 
         for node in nodes:
@@ -48,7 +47,8 @@ class K8sSystemAdapter(SystemPort):
         if not grouped_shapes:
             raise ValueError("No valid worker nodes found in the cluster to build topology")
         
-        # TODO: (Low priority) Temporary hardcoded power model and power source
+        # TODO: (Low priority) Temporary hardcoded power model
+        # TODO: Check if power model change based on node_type
         cpu_power_model = MseCPUPowerModel(
             modelType="mse",
             power=300,
@@ -56,12 +56,13 @@ class K8sSystemAdapter(SystemPort):
             maxPower=2,
             calibrationFactor=4
         )
+        # TODO: (Low priority) Temporary hardcoded power source
         power_source = PowerSource(carbonTracePath="/app/workload/carbon.parquet")
         
         hosts: list[Host] = []
         for idx, (shape, count) in enumerate(grouped_shapes.items()):
             host = Host(
-                name=f"H{(idx+1):02d}",
+                name=f"H{(idx+1):02d}_{shape.node_type}",
                 count=count,
                 cpu=CPU(coreCount=shape.cpu_count, coreSpeed=self.cpu_frequency_mhz),
                 memory=Memory(memorySize=shape.memory_size_bytes),
@@ -81,10 +82,18 @@ class K8sSystemAdapter(SystemPort):
 
     async def fetch_status(self) -> K8sSystemSnapshot:
         logger.info("Fetching current system status from Kubernetes cluster")
-        topology = self._build_topology()
-
         nodes = self.core_api.list_node().items
-        max_available_node_count = sum(1 for node in nodes if K8sNodeExtractor.is_worker_node(node) and K8sNodeExtractor.is_node_available(node))
+        topology = self._build_topology(nodes)
+
+        cloud_node_count = sum(1 for node in nodes if K8sNodeExtractor.is_worker_node(node) and K8sNodeExtractor.is_node_available(node) and K8sNodeExtractor.get_node_type(node) == "cloud")
+        edge_node_count = sum(1 for node in nodes if K8sNodeExtractor.is_worker_node(node) and K8sNodeExtractor.is_node_available(node) and K8sNodeExtractor.get_node_type(node) == "edge")
+        endpoint_node_count = sum(1 for node in nodes if K8sNodeExtractor.is_worker_node(node) and K8sNodeExtractor.is_node_available(node) and K8sNodeExtractor.get_node_type(node) == "endpoint")
+        
+        max_available_node_count = {
+            "cloud": cloud_node_count,
+            "edge": edge_node_count,
+            "endpoint": endpoint_node_count
+        }
 
         return K8sSystemSnapshot(
             topology=topology,
