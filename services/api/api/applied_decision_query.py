@@ -34,6 +34,25 @@ class AppliedDecisionQuery:
         logger.info(f"Initialized AppliedDecisionQuery for run {run_id}")
         logger.info(f"Applied decisions history: {self.history_path}")
 
+    def _flatten_details(self, value: Any, prefix: str = "") -> dict[str, Any]:
+        """Flatten nested decision details into Grafana-friendly scalar columns."""
+        if value is None:
+            return {}
+
+        flattened: dict[str, Any] = {}
+        if isinstance(value, dict):
+            for key, nested_value in value.items():
+                next_prefix = f"{prefix}_{key}" if prefix else str(key)
+                flattened.update(self._flatten_details(nested_value, next_prefix))
+            return flattened
+
+        if isinstance(value, (list, tuple)):
+            flattened[prefix] = json.dumps(value)
+            return flattened
+
+        flattened[prefix] = value
+        return flattened
+
     def query(
         self,
         start_time: datetime | None = None,
@@ -46,6 +65,7 @@ class AppliedDecisionQuery:
         start_time_utc = pd.to_datetime(start_time, utc=True) if start_time else None
         rows: list[dict[str, Any]] = []
         action_names: set[str] = set()
+        detail_field_names: set[str] = set()
 
         with self.history_path.open("r", encoding="utf-8") as file_handle:
             for line in file_handle:
@@ -66,23 +86,35 @@ class AppliedDecisionQuery:
                 if not include_no_op and action == "no_op":
                     continue
 
+                details = decision_payload.get("details")
+                flattened_details = self._flatten_details(details)
+
                 row = {
                     "timestamp": timestamp.to_pydatetime(),
+                    "state_id": payload.get("state_id"),
+                    "success": success,
+                    "error_message": payload.get("error_message") or None,
+                    "action": action,
                     action: 1,
+                    **flattened_details,
                 }
                 rows.append(row)
                 action_names.add(action)
+                detail_field_names.update(flattened_details.keys())
 
         rows.sort(key=lambda row: row["timestamp"])
 
         for row in rows:
             for action_name in action_names:
                 row.setdefault(action_name, None)
+            for field_name in detail_field_names:
+                row.setdefault(field_name, None)
 
         metadata = {
             "run_id": self.run_id,
             "count": len(rows),
             "action_names": sorted(action_names),
+            "detail_fields": sorted(detail_field_names),
             "include_failed": include_failed,
             "include_no_op": include_no_op,
             "start_time": rows[0]["timestamp"].isoformat() if rows else None,

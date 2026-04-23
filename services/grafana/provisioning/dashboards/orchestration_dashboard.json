@@ -337,7 +337,7 @@
         "type": "yesoreyeram-infinity-datasource",
         "uid": "df5tfgbpfeakgc"
       },
-      "description": "Event-style visualization of decision timestamps. Each point marks when a specific action was applied.",
+      "description": "Event-style visualization of decision timestamps. Each point marks when a specific action was applied. Use the companion table panel for action details including from/to node counts.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -414,17 +414,17 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "scale_up"
+              "options": "change_node_count"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "Scale Up"
+                "value": "Change Node Count"
               },
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "#73BF69",
+                  "fixedColor": "#F2495C",
                   "mode": "fixed"
                 }
               }
@@ -432,19 +432,16 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "scale_down"
+              "id": "byRegexp",
+              "options": "^(action|state_id|success|error_message|from_.*|to_.*)$"
             },
             "properties": [
               {
-                "id": "displayName",
-                "value": "Scale Down"
-              },
-              {
-                "id": "color",
+                "id": "custom.hideFrom",
                 "value": {
-                  "fixedColor": "#F2495C",
-                  "mode": "fixed"
+                  "legend": true,
+                  "tooltip": true,
+                  "viz": true
                 }
               }
             ]
@@ -515,6 +512,247 @@
         }
       ],
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "df5tfgbpfeakgc"
+      },
+      "description": "Detailed applied decision log including action, state id, success, and flattened from/to node counts.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "timestamp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Recorded At"
+              },
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "action"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Action"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "state_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "State ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "success"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Success"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "error_message"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Error"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "from_cloud"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "From Cloud"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "from_endpoint"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "From Endpoint"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "to_cloud"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "To Cloud"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "to_endpoint"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "To Endpoint"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "id": 4,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Recorded At"
+          }
+        ]
+      },
+      "pluginVersion": "12.3.0",
+      "targets": [
+        {
+          "columns": [],
+          "computed_columns": [],
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "df5tfgbpfeakgc"
+          },
+          "filters": [],
+          "format": "table",
+          "global_query_id": "",
+          "parser": "backend",
+          "refId": "A",
+          "root_selector": "data",
+          "source": "url",
+          "type": "json",
+          "url": "http://api:8000/api/applied_decisions",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          }
+        }
+      ],
+      "title": "Applied Decision Details",
+      "transformations": [
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "destinationType": "time",
+                "targetField": "timestamp"
+              }
+            ],
+            "fields": {}
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "change_node_count": true,
+              "no_op": true
+            },
+            "indexByName": {
+              "timestamp": 0,
+              "action": 1,
+              "from_cloud": 2,
+              "from_endpoint": 3,
+              "to_cloud": 4,
+              "to_endpoint": 5,
+              "state_id": 6,
+              "success": 7,
+              "error_message": 8
+            },
+            "renameByName": {
+              "timestamp": "Recorded At",
+              "action": "Action",
+              "from_cloud": "From Cloud",
+              "from_endpoint": "From Endpoint",
+              "to_cloud": "To Cloud",
+              "to_endpoint": "To Endpoint",
+              "state_id": "State ID",
+              "success": "Success",
+              "error_message": "Error"
+            }
+          }
+        }
+      ],
+      "type": "table"
     }
   ],
   "preload": false,
