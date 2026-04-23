@@ -49,15 +49,6 @@ class K8sSystemAdapter(SystemPort):
         if not grouped_shapes:
             raise ValueError("No valid worker nodes found in the cluster to build topology")
         
-        # TODO: (Low priority) Temporary hardcoded power model
-        # TODO: Check if power model change based on node_type
-        cpu_power_model = MseCPUPowerModel(
-            modelType="mse",
-            power=300,
-            idlePower=0.045,
-            maxPower=2,
-            calibrationFactor=4
-        )
         # TODO: (Low priority) Temporary hardcoded power source
         power_source = PowerSource(carbonTracePath="/app/workload/carbon.parquet")
         
@@ -65,6 +56,32 @@ class K8sSystemAdapter(SystemPort):
         # so we can safely use the node type as the host name in the topology
         hosts: list[Host] = []
         for idx, (shape, count) in enumerate(grouped_shapes.items()):
+            # TODO: (Low priority) Temporary hardcoded power model
+            # TODO: Fine-tune power model parameters before experiment
+            if shape.node_type == "cloud":
+                cpu_power_model = MseCPUPowerModel(
+                    modelType="mse",
+                    power=300,
+                    idlePower=0.03,
+                    maxPower=4.5,
+                    calibrationFactor=4
+                )
+            elif shape.node_type == "endpoint":
+                cpu_power_model = MseCPUPowerModel(
+                    modelType="mse",
+                    power=300,
+                    idlePower=0.02,
+                    maxPower=1.15,
+                    calibrationFactor=4
+                )
+            else:
+                cpu_power_model = MseCPUPowerModel(
+                    modelType="mse",
+                    power=300,
+                    idlePower=0.03,
+                    maxPower=4.5,
+                    calibrationFactor=4
+                )
             host = Host(
                 name=shape.node_type,
                 count=count,
