@@ -11,6 +11,14 @@ logger = logging.getLogger(__name__)
 
 
 class K8sProposalGenerator(ProposalGenerator):
+    def _get_node_type_current_count(self, snapshot: K8sSystemSnapshot, node_type: str) -> int:
+        """Helper method to get the current count of a specific node type from the snapshot."""
+        # Assuming the topology names the hosts according to the node type (e.g., "cloud", "edge", "endpoint")
+        for host in snapshot.topology.clusters[0].hosts:
+            if host.name == node_type:
+                return host.count
+        return 0
+
     def _get_requested_node_count(self, snapshot: K8sSystemSnapshot, relative_node_count_change: dict[str, int]) -> dict[str, int]:
         """
         Calculates the requested node count based on the current snapshot and the relative change.
@@ -21,9 +29,8 @@ class K8sProposalGenerator(ProposalGenerator):
         - returns {"cloud": 2, "edge": 4, "endpoint": 1}
         """
         requested_node_count = {}
-        for host in snapshot.topology.clusters[0].hosts:
-            node_type = host.name
-            current_count = host.count
+        for node_type in K8sSystemSnapshot.node_types:
+            current_count = self._get_node_type_current_count(snapshot, node_type)
             change = relative_node_count_change.get(node_type, 0)
             if change == 0:
                 requested_node_count[node_type] = current_count
