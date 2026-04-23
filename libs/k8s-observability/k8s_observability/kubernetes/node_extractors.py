@@ -82,6 +82,8 @@ class K8sNodeExtractor:
         node_type = K8sNodeExtractor.get_node_type(node)
         cpu_count = max(1, int(round(UnitUtils.parse_cpu_to_core(allocatable.get("cpu")))))
         memory_size_bytes = UnitUtils.parse_mem_to_bytes(allocatable.get("memory"))
+        # Round memory size to 3 sig fig to avoid overly precise number
+        memory_size_bytes = int(float(f"{memory_size_bytes:.3g}"))
         architecture = labels.get("kubernetes.io/arch", "unknown")
         operating_system = labels.get("kubernetes.io/os", "unknown")  # Using OS as a proxy for instance type
 
@@ -89,8 +91,8 @@ class K8sNodeExtractor:
             node_type=node_type,
             cpu_count=cpu_count,
             memory_size_bytes=memory_size_bytes,
-            architecture=architecture,
-            operating_system=operating_system
+            # architecture=architecture,
+            # operating_system=operating_system
         )
     
     @staticmethod
