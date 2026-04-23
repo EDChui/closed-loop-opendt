@@ -62,11 +62,13 @@ class K8sSystemAdapter(SystemPort):
         # Assume for a single node type, all nodes will have the same shape, so we can safely use the node type as the host name in the topology
         hosts: list[Host] = []
         for idx, (shape, count) in enumerate(grouped_shapes.items()):
+            # Round memory size to 3 sig fig to avoid overly precise number
+            memory_size_bytes = int(float(f"{shape.memory_size_bytes:.3g}"))
             host = Host(
                 name=shape.node_type,
                 count=count,
                 cpu=CPU(coreCount=shape.cpu_count, coreSpeed=self.cpu_frequency_mhz),
-                memory=Memory(memorySize=shape.memory_size_bytes),
+                memory=Memory(memorySize=memory_size_bytes),
                 cpuPowerModel=cpu_power_model
             )
             hosts.append(host)
