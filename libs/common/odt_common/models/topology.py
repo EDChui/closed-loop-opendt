@@ -83,7 +83,7 @@ class Host(BaseModel):
     """Host (physical server) in a datacenter cluster."""
 
     name: str = Field(..., description="Host identifier/name")
-    count: int = Field(..., description="Number of identical hosts", gt=0)
+    count: int = Field(..., description="Number of identical hosts", ge=0)
     cpu: CPU = Field(..., description="CPU specification")
     memory: Memory = Field(..., description="Memory specification")
     cpuPowerModel: AsymptoticCPUPowerModel | MseCPUPowerModel = Field(
