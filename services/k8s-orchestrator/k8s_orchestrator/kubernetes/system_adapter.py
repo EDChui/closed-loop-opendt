@@ -38,6 +38,8 @@ class K8sSystemAdapter(SystemPort):
         grouped_shapes: dict[K8sNodeShape, int] = defaultdict(int)
 
         for node in nodes:
+            if not K8sNodeExtractor.is_worker_node(node):
+                continue
             shape = K8sNodeExtractor.get_node_shape(node)
             if K8sNodeExtractor.is_worker_node_in_use(node):
                 grouped_shapes[shape] += 1
