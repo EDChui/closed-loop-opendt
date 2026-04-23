@@ -38,30 +38,50 @@ class K8sSystemAdapter(SystemPort):
         grouped_shapes: dict[K8sNodeShape, int] = defaultdict(int)
 
         for node in nodes:
-            if not K8sNodeExtractor.is_worker_node_in_use(node):
+            if not K8sNodeExtractor.is_worker_node(node):
                 continue
-
             shape = K8sNodeExtractor.get_node_shape(node)
-            grouped_shapes[shape] += 1
+            if K8sNodeExtractor.is_worker_node_in_use(node):
+                grouped_shapes[shape] += 1
+            else:
+                grouped_shapes[shape] += 0  # Ensure the shape is included in the topology even if there are currently no nodes of that shape in use
 
         if not grouped_shapes:
             raise ValueError("No valid worker nodes found in the cluster to build topology")
         
-        # TODO: (Low priority) Temporary hardcoded power model
-        # TODO: Check if power model change based on node_type
-        cpu_power_model = MseCPUPowerModel(
-            modelType="mse",
-            power=300,
-            idlePower=0.045,
-            maxPower=2,
-            calibrationFactor=4
-        )
         # TODO: (Low priority) Temporary hardcoded power source
         power_source = PowerSource(carbonTracePath="/app/workload/carbon.parquet")
         
-        # Assume for a single node type, all nodes will have the same shape, so we can safely use the node type as the host name in the topology
+        # Assume for a single node type, they all have the same shape (same CPU and memory configuration),
+        # so we can safely use the node type as the host name in the topology
         hosts: list[Host] = []
         for idx, (shape, count) in enumerate(grouped_shapes.items()):
+            # TODO: (Low priority) Temporary hardcoded power model
+            # TODO: Fine-tune power model parameters before experiment
+            if shape.node_type == "cloud":
+                cpu_power_model = MseCPUPowerModel(
+                    modelType="mse",
+                    power=300,
+                    idlePower=0.03,
+                    maxPower=4.5,
+                    calibrationFactor=4
+                )
+            elif shape.node_type == "endpoint":
+                cpu_power_model = MseCPUPowerModel(
+                    modelType="mse",
+                    power=300,
+                    idlePower=0.02,
+                    maxPower=1.15,
+                    calibrationFactor=4
+                )
+            else:
+                cpu_power_model = MseCPUPowerModel(
+                    modelType="mse",
+                    power=300,
+                    idlePower=0.03,
+                    maxPower=4.5,
+                    calibrationFactor=4
+                )
             host = Host(
                 name=shape.node_type,
                 count=count,
