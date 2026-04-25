@@ -80,6 +80,7 @@ class K8sWorkloadProducer(BaseProducer):
         task_id: int,
         start_time: datetime,
         finish_time: datetime,
+        cpu_request_count: float,
         cpu_limit_count: float
     ) -> list[Fragment]:
         fragments = []
@@ -89,8 +90,12 @@ class K8sWorkloadProducer(BaseProducer):
                 continue
             duration_ms = ceil((snapshot.capture_time - last_capture_time).total_seconds() * SECONDS_TO_MILLISECONDS)
             last_capture_time = snapshot.capture_time
-            utilization_rate = snapshot.cpu_usage / cpu_limit_count
-            cpu_count = ceil(cpu_limit_count)
+            cpu_count = max(cpu_request_count, cpu_limit_count)
+            if cpu_count == 0:
+                utilization_rate = 0
+            else:
+                utilization_rate = snapshot.cpu_usage / cpu_count
+            cpu_count = ceil(cpu_count)
             cpu_usage = utilization_rate * cpu_count * self.cpu_frequency_mhz
             fragments.append(Fragment(
                 id=task_id,
@@ -102,7 +107,8 @@ class K8sWorkloadProducer(BaseProducer):
     
     def _convert_terminal_metadata_to_task(self, metadata: K8sTaskRecord, task_id: int, fragments: list[Fragment]) -> Task:
         duration_ms = ceil((metadata.finish_time - metadata.start_time).total_seconds() * SECONDS_TO_MILLISECONDS)
-        cpu_count = ceil(metadata.cpu_limit_count)
+        cpu_count = max(metadata.cpu_request_count, metadata.cpu_limit_count)
+        cpu_count = ceil(cpu_count)
         cpu_capacity = cpu_count * self.cpu_frequency_mhz
         return Task(
             id=task_id,
@@ -130,6 +136,7 @@ class K8sWorkloadProducer(BaseProducer):
                 task_id=task_id,
                 start_time=terminal_metadata.start_time,
                 finish_time=terminal_metadata.finish_time,
+                cpu_request_count=terminal_metadata.cpu_request_count,
                 cpu_limit_count=terminal_metadata.cpu_limit_count
             )
 
