@@ -1,0 +1,127 @@
+seed: 42
+delete_after_seconds: 30
+status_poll_seconds: 30
+
+scale: 10
+queries:
+  - q3-v2.4
+  - q64-v2.4
+  - q70-v2.4
+  - q82-v2.4
+
+workloads:
+  - amount: 30
+    iat_seconds: 30
+  - amount: 60
+    iat_seconds: 15
+  - amount: 90
+    iat_seconds: 10
+  - amount: 60
+    iat_seconds: 15
+  - amount: 30
+    iat_seconds: 30
+
+# These metastore_dirs are used to solve the error "ERROR XSDB6: Another instance of Derby may have already booted the database /tpcds-data/metastore_db"
+# This override the spark submit config's metastore_dir
+# Allow 100 concurrent Spark jobs to play safe
+metastore_dirs:
+  - /tpcds-data/metastore_db_1
+  - /tpcds-data/metastore_db_2
+  - /tpcds-data/metastore_db_3
+  - /tpcds-data/metastore_db_4
+  - /tpcds-data/metastore_db_5
+  - /tpcds-data/metastore_db_6
+  - /tpcds-data/metastore_db_7
+  - /tpcds-data/metastore_db_8
+  - /tpcds-data/metastore_db_9
+  - /tpcds-data/metastore_db_10
+  - /tpcds-data/metastore_db_11
+  - /tpcds-data/metastore_db_12
+  - /tpcds-data/metastore_db_13
+  - /tpcds-data/metastore_db_14
+  - /tpcds-data/metastore_db_15
+  - /tpcds-data/metastore_db_16
+  - /tpcds-data/metastore_db_17
+  - /tpcds-data/metastore_db_18
+  - /tpcds-data/metastore_db_19
+  - /tpcds-data/metastore_db_20
+  - /tpcds-data/metastore_db_21
+  - /tpcds-data/metastore_db_22
+  - /tpcds-data/metastore_db_23
+  - /tpcds-data/metastore_db_24
+  - /tpcds-data/metastore_db_25
+  - /tpcds-data/metastore_db_26
+  - /tpcds-data/metastore_db_27
+  - /tpcds-data/metastore_db_28
+  - /tpcds-data/metastore_db_29
+  - /tpcds-data/metastore_db_30
+  - /tpcds-data/metastore_db_31
+  - /tpcds-data/metastore_db_32
+  - /tpcds-data/metastore_db_33
+  - /tpcds-data/metastore_db_34
+  - /tpcds-data/metastore_db_35
+  - /tpcds-data/metastore_db_36
+  - /tpcds-data/metastore_db_37
+  - /tpcds-data/metastore_db_38
+  - /tpcds-data/metastore_db_39
+  - /tpcds-data/metastore_db_40
+  - /tpcds-data/metastore_db_41
+  - /tpcds-data/metastore_db_42
+  - /tpcds-data/metastore_db_43
+  - /tpcds-data/metastore_db_44
+  - /tpcds-data/metastore_db_45
+  - /tpcds-data/metastore_db_46
+  - /tpcds-data/metastore_db_47
+  - /tpcds-data/metastore_db_48
+  - /tpcds-data/metastore_db_49
+  - /tpcds-data/metastore_db_50
+  - /tpcds-data/metastore_db_51
+  - /tpcds-data/metastore_db_52
+  - /tpcds-data/metastore_db_53
+  - /tpcds-data/metastore_db_54
+  - /tpcds-data/metastore_db_55
+  - /tpcds-data/metastore_db_56
+  - /tpcds-data/metastore_db_57
+  - /tpcds-data/metastore_db_58
+  - /tpcds-data/metastore_db_59
+  - /tpcds-data/metastore_db_60
+  - /tpcds-data/metastore_db_61
+  - /tpcds-data/metastore_db_62
+  - /tpcds-data/metastore_db_63
+  - /tpcds-data/metastore_db_64
+  - /tpcds-data/metastore_db_65
+  - /tpcds-data/metastore_db_66
+  - /tpcds-data/metastore_db_67
+  - /tpcds-data/metastore_db_68
+  - /tpcds-data/metastore_db_69
+  - /tpcds-data/metastore_db_70
+  - /tpcds-data/metastore_db_71
+  - /tpcds-data/metastore_db_72
+  - /tpcds-data/metastore_db_73
+  - /tpcds-data/metastore_db_74
+  - /tpcds-data/metastore_db_75
+  - /tpcds-data/metastore_db_76
+  - /tpcds-data/metastore_db_77
+  - /tpcds-data/metastore_db_78
+  - /tpcds-data/metastore_db_79
+  - /tpcds-data/metastore_db_80
+  - /tpcds-data/metastore_db_81
+  - /tpcds-data/metastore_db_82
+  - /tpcds-data/metastore_db_83
+  - /tpcds-data/metastore_db_84
+  - /tpcds-data/metastore_db_85
+  - /tpcds-data/metastore_db_86
+  - /tpcds-data/metastore_db_87
+  - /tpcds-data/metastore_db_88
+  - /tpcds-data/metastore_db_89
+  - /tpcds-data/metastore_db_90
+  - /tpcds-data/metastore_db_91
+  - /tpcds-data/metastore_db_92
+  - /tpcds-data/metastore_db_93
+  - /tpcds-data/metastore_db_94
+  - /tpcds-data/metastore_db_95
+  - /tpcds-data/metastore_db_96
+  - /tpcds-data/metastore_db_97
+  - /tpcds-data/metastore_db_98
+  - /tpcds-data/metastore_db_99
+  - /tpcds-data/metastore_db_100

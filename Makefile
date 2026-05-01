@@ -1,4 +1,4 @@
-.PHONY: up down export-db clean-volumes help test setup clean-env lint
+.PHONY: up down export-api-metrics export-db clean-volumes help test setup clean-env lint
 
 # Default target
 .DEFAULT_GOAL := help
@@ -17,6 +17,10 @@ build ?= false
 # Database export flag - set to 'false' to skip export during shutdown
 # Usage: make down export_db=false
 export_db ?= true
+
+# API metrics export flag - set to 'false' to skip API snapshot during shutdown
+# Usage: make down export_metrics=false
+export_metrics ?= true
 
 # Virtual environment detection
 VENV := .venv
@@ -70,6 +74,12 @@ down:
 	else \
 		echo "Skipping PostgreSQL export (export_db=false)."; \
 	fi
+	@if [ "$(export_metrics)" = "true" ]; then \
+		echo "Exporting API metrics snapshot before shutdown..."; \
+		$(MAKE) export-api-metrics; \
+	else \
+		echo "Skipping API metrics export (export_metrics=false)."; \
+	fi
 	@echo "Stopping OpenDT services..."
 	@RUN_ID=$$(cat .run_id 2>/dev/null || true); \
 	if [ -n "$$RUN_ID" ] && [ -f "data/$$RUN_ID/.env" ]; then \
@@ -79,6 +89,17 @@ down:
 	fi
 	@echo "Done."
 	@echo ""
+
+## export-api-metrics: Save API power and CPU utilization responses as separate JSON files
+export-api-metrics:
+	@RUN_ID=$$(cat .run_id 2>/dev/null || true); \
+	if [ -z "$$RUN_ID" ]; then \
+		echo "No .run_id found. Skipping API metrics export."; \
+		exit 0; \
+	fi; \
+	OUTPUT_DIR="data/$$RUN_ID/api"; \
+	mkdir -p "$$OUTPUT_DIR"; \
+	$(PYTHON) scripts/export_api_metrics.py --base-url http://localhost:3001 --interval-seconds 60 --output-dir "$$OUTPUT_DIR" --allow-partial
 
 ## export-db: Save PostgreSQL public schema tables as Parquet files
 export-db:

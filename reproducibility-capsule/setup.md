@@ -105,3 +105,14 @@ kubectl -n monitoring patch prometheus k8s --type merge -p '{
 
 kubectl -n monitoring delete pod prometheus-k8s-0 prometheus-k8s-1
 ```
+
+## Tag Kubernets nodes
+
+To identify the type of machines in the Kubernets cluster, we can add labels to the nodes.
+
+In `cloud_controller_echui`, copy the [`scripts/k8s_control_panel.py`](../scripts/k8s_control_panel.py) script and install the dependencies:
+
+```bash
+pip install kubernetes click
+python3 k8s_control_panel.py settype worker-1 cloud/edge/endpoint
+```
