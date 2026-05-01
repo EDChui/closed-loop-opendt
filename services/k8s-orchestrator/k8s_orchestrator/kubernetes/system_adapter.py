@@ -63,7 +63,7 @@ class K8sSystemAdapter(SystemPort):
                     modelType="mse",
                     power=300,
                     idlePower=0.03,
-                    maxPower=4.5,
+                    maxPower=5,
                     calibrationFactor=4
                 )
             elif shape.node_type == "endpoint":
@@ -79,7 +79,7 @@ class K8sSystemAdapter(SystemPort):
                     modelType="mse",
                     power=300,
                     idlePower=0.03,
-                    maxPower=4.5,
+                    maxPower=5,
                     calibrationFactor=4
                 )
             host = Host(
