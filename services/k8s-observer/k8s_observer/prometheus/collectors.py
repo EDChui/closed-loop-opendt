@@ -56,7 +56,7 @@ class PrometheusWorkloadResourceCollector(PrometheusResourceCollector, ABC):
         self,
         prom: PrometheusClient,
         namespace: str,
-        cpu_rate_window: str = "2m",
+        cpu_rate_window: str = "5m",
         resource_name_regex: Optional[str] = None,
     ):
         self.prom = prom
@@ -151,7 +151,7 @@ class JobResourceCollector(PrometheusWorkloadResourceCollector):
         self,
         prom: PrometheusClient,
         namespace: str,
-        cpu_rate_window: str = "2m",
+        cpu_rate_window: str = "5m",
         resource_name_regex: Optional[str] = None,
         kubeconfig_file: Optional[str] = None,
     ):
@@ -232,7 +232,7 @@ class NodeResourceCollector(PrometheusResourceCollector):
     def __init__(
         self,
         prom: PrometheusClient,
-        cpu_rate_window: str = "2m",
+        cpu_rate_window: str = "5m",
         resource_name_regex: Optional[str] = None,
     ):
         self.prom = prom

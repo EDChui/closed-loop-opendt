@@ -11,6 +11,7 @@ Examples:
   python k8s_control_panel.py cordon worker-1
   python k8s_control_panel.py uncordon worker-1
   python k8s_control_panel.py settype worker-1 cloud/edge/endpoint
+  python k8s_control_panel.py setavailability worker-1 available/unavailable
 
 Optional:
   python k8s_control_panel.py list --kubeconfig ~/.kube/config --context my-cluster
@@ -23,13 +24,14 @@ from kubernetes.config.config_exception import ConfigException
 from kubernetes.client.rest import ApiException
 
 
+AVAILABILITY_LABEL = "k8s-observability/availability"
+
+
 def load_k8s_config(kubeconfig=None, context=None):
     try:
         config.load_incluster_config()
-        # click.echo("Loaded in-cluster Kubernetes config")
     except ConfigException:
         config.load_kube_config(config_file=kubeconfig, context=context)
-        # click.echo("Loaded kubeconfig")
 
 
 def get_api():
@@ -49,11 +51,21 @@ def set_unschedulable(api, node_name: str, unschedulable: bool):
     return api.patch_node(name=node_name, body=patch_body)
 
 
-def get_avalilability(node) -> bool:
+def get_availability(node) -> bool:
     metadata = getattr(node, "metadata", None)
     labels = getattr(metadata, "labels", {}) or {}
-    return labels.get("k8s-observability/availability", "") != "unavailable"
+    return labels.get(AVAILABILITY_LABEL, "") != "unavailable"
 
+
+def set_availability(api, node_name: str, available: bool):
+    patch_body = {
+        "metadata": {
+            "labels": {
+                AVAILABILITY_LABEL: None if available else "unavailable"
+            }
+        }
+    }
+    return api.patch_node(name=node_name, body=patch_body)
 
 def get_ready_status(node) -> str:
     for condition in node.status.conditions or []:
@@ -107,7 +119,7 @@ def print_status(api, node_name: str):
     node = api.read_node(name=node_name)
     ready = get_ready_status(node)
     schedulable = "unschedulable" if get_unschedulable(node) else "schedulable"
-    availability = "available" if get_avalilability(node) else "unavailable"
+    availability = "available" if get_availability(node) else "unavailable"
     roles = get_roles(node)
     node_type = get_node_type(node)
     version = getattr(node.status.node_info, "kubelet_version", "-")
@@ -141,7 +153,7 @@ def list_nodes(api):
     for node in nodes:
         name = node.metadata.name
         ready = get_ready_status(node)
-        availability = "available" if get_avalilability(node) else "unavailable"
+        availability = "available" if get_availability(node) else "unavailable"
         scheduling = "unschedulable" if get_unschedulable(node) else "schedulable"
         roles = get_roles(node)
         node_type = get_node_type(node)
@@ -252,6 +264,34 @@ def settype(node_name, node_type, kubeconfig, context):
         api = build_api(kubeconfig=kubeconfig, context=context)
         set_node_type(api, node_name, node_type)
         click.echo(f"Node {node_name} has been labeled with node type '{node_type}'")
+    except ApiException as e:
+        raise click.ClickException(format_api_error(e))
+    except Exception as e:
+        raise click.ClickException(str(e))
+    
+
+@cli.command()
+@click.argument("node_name")
+@click.argument("availability", type=click.Choice(["available", "unavailable"]))
+@common_options
+def setavailability(node_name, availability, kubeconfig, context):
+    """Set node availability. 'unavailable' adds label, 'available' removes label."""
+    try:
+        api = build_api(kubeconfig=kubeconfig, context=context)
+
+        available = availability == "available"
+        set_availability(api, node_name, available)
+        set_unschedulable(api, node_name, not available)
+
+        if available:
+            click.echo(
+                f"Node {node_name} availability label has been removed; node is available"
+            )
+        else:
+            click.echo(
+                f"Node {node_name} has been labeled as unavailable"
+            )
+
     except ApiException as e:
         raise click.ClickException(format_api_error(e))
     except Exception as e:

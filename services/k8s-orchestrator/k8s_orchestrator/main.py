@@ -63,8 +63,7 @@ async def main() -> None:
         policy_type="ranked",
         objectives={
             "runtime": RankedObjectiveSpec(name="runtime", direction=MetricDirection.MIN, priority=1, tie_tolerance=30.0),
-            "utilization": RankedObjectiveSpec(name="utilization", direction=MetricDirection.MAX, priority=2, tie_tolerance=0.05),
-            "power": RankedObjectiveSpec(name="power", direction=MetricDirection.MIN, priority=3, tie_tolerance=0.0),
+            "power": RankedObjectiveSpec(name="power", direction=MetricDirection.MIN, priority=2, tie_tolerance=0.0)
         }
     )
 

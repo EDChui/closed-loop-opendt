@@ -114,18 +114,29 @@ class K8sProposalGenerator(ProposalGenerator):
         )
         proposals.append(proposal)
 
-        # TODO: Generate more proposals with different combinations
-        # +1 Cloud node proposal
-        request_node_count = self._get_requested_node_count(current_snapshot, relative_node_count_change={"cloud": 1})
-        scale_up_cloud_proposal = self.generate_change_node_count_proposal(current_snapshot, state.state_id, request_node_count)
-        if scale_up_cloud_proposal is not None:
-            proposals.append(scale_up_cloud_proposal)
+        # TODO: Change me for different experiment setup
+        relative_changes = [
+            {"cloud": 2},
+            {"cloud": 1},
+            {"cloud": -1},
+            {"cloud": -2},
+        ]
+        for change in relative_changes:
+            request_node_count = self._get_requested_node_count(current_snapshot, relative_node_count_change=change)
+            proposal = self.generate_change_node_count_proposal(current_snapshot, state.state_id, request_node_count)
+            if proposal is not None:
+                proposals.append(proposal)
 
-        # -1 Cloud node proposal
-        request_node_count = self._get_requested_node_count(current_snapshot, relative_node_count_change={"cloud": -1})
-        scale_down_cloud_proposal = self.generate_change_node_count_proposal(current_snapshot, state.state_id, request_node_count)
-        if scale_down_cloud_proposal is not None:
-            proposals.append(scale_down_cloud_proposal)
+        absolute_changes = [
+            {"cloud": 8},
+            {"cloud": 6},
+            {"cloud": 4},
+            {"cloud": 2},
+        ]
+        for change in absolute_changes:
+            proposal = self.generate_change_node_count_proposal(current_snapshot, state.state_id, change)
+            if proposal is not None:
+                proposals.append(proposal)
 
         simulationBatch = SimulationBatch(
             batch_id=batch_id,

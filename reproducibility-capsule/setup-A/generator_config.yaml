@@ -1,29 +1,63 @@
+k8s_api: https://192.168.134.2:6443
+service_account: spark
+namespace: default
+image: elliesgood00/tpcds-image:v17
+class_name: ParquetGenerator
+host_dir: /mnt/tpcds/tpcds-baseline
+container_dir: /tpcds-data
+metastore_dir: /tpcds-data/metastore_db
+wait_app_completion: false
+
+# Default Spark submit configuration for all queries, can be overridden by query-specific config
+driver_config:
+  cores: 1
+  k8s_request_cores: 1
+  k8s_limit_cores: 1
+  memory: 2g
+  memory_overhead: 512m
+
+executor_config:
+  instances: 2
+  cores: 1
+  k8s_request_cores: 1
+  k8s_limit_cores: 1
+  memory: 2g
+  memory_overhead: 512m
+  delete_on_termination: true
+
 seed: 42
 delete_after_seconds: 30
 status_poll_seconds: 30
 
-scale: 10
+scale: 30
 queries:
-  - q3-v2.4
-  - q64-v2.4
-  - q70-v2.4
-  - q82-v2.4
+  - name: q3-v2.4
+  - name: q64-v2.4
+    executor_config:
+      instances: 2
+      cores: 2
+      k8s_request_cores: 2
+      k8s_limit_cores: 2
+      memory: 4g
+      memory_overhead: 512m
+      delete_on_termination: true
+  - name: q70-v2.4
+  - name: q82-v2.4
 
 workloads:
-  - amount: 30
-    iat_seconds: 30
+  - amount: 15
+    iat_seconds: 35
+  - amount: 25
+    iat_seconds: 20
   - amount: 60
     iat_seconds: 15
-  - amount: 90
-    iat_seconds: 10
-  - amount: 60
-    iat_seconds: 15
-  - amount: 30
-    iat_seconds: 30
+  - amount: 25
+    iat_seconds: 20
+  - amount: 15
+    iat_seconds: 35
 
 # These metastore_dirs are used to solve the error "ERROR XSDB6: Another instance of Derby may have already booted the database /tpcds-data/metastore_db"
 # This override the spark submit config's metastore_dir
-# Allow 100 concurrent Spark jobs to play safe
 metastore_dirs:
   - /tpcds-data/metastore_db_1
   - /tpcds-data/metastore_db_2
