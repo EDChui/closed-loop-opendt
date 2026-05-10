@@ -59,12 +59,14 @@ async def main() -> None:
     namespace = config.global_config.namespace
     cpu_frequency_mhz = config.global_config.cpu_frequency_mhz
     refresh_interval_seconds = config.services.k8s_orchestrator.refresh_interval_seconds
+    backlog_refresh_interval_seconds = config.services.k8s_orchestrator.backlog_refresh_interval_seconds
     backlog_threshold = config.services.k8s_orchestrator.backlog_threshold
     # TODO: Make the initial policy configurable
     initial_policy = RankedDecisionPolicy(
         policy_type="ranked",
         objectives={
             "runtime": RankedObjectiveSpec(name="runtime", direction=MetricDirection.MIN, priority=1, tie_tolerance=30.0),
+            "utilization": RankedObjectiveSpec(name="utilization", direction=MetricDirection.MAX, priority=2, tie_tolerance=0.05),
             "power": RankedObjectiveSpec(name="power", direction=MetricDirection.MIN, priority=2, tie_tolerance=0.0)
         }
     )
@@ -74,7 +76,8 @@ async def main() -> None:
 
     # Orchestrator configuration
     orchestrator_config = DecisionOrchestratorConfig(
-        refresh_interval_seconds=refresh_interval_seconds
+        refresh_interval_seconds=refresh_interval_seconds,
+        backlog_refresh_interval_seconds=backlog_refresh_interval_seconds
     )
 
     # Initialize components

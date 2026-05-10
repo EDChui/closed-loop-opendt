@@ -9,6 +9,7 @@ global:
 services:
   k8s-orchestrator:
     refresh_interval_seconds: 30
+    backlog_refresh_interval_seconds: 360
 
   k8s-observer:
     heartbeat_frequency_minutes: 1
@@ -41,7 +42,7 @@ services:
         url: "http://node4:8088/scaphandre/cloud7_echui"
 
   simulator:
-    simulation_frequency_minutes: 2
+    simulation_frequency_minutes: 5
 
 kafka:
   topics:

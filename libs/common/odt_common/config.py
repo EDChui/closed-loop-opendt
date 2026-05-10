@@ -101,6 +101,9 @@ class K8sOrchestratorConfig(BaseModel):
     refresh_interval_seconds: int = Field(
         default=120, description="Interval in seconds to fetch real system status", gt=0
     )
+    backlog_refresh_interval_seconds: int = Field(
+        default=60, description="Interval in seconds to refresh backlog status", gt=0
+    )
     backlog_threshold: int = Field(
         default=10,
         description="Threshold for number of pending pods/jobs to trigger scaling actions",
