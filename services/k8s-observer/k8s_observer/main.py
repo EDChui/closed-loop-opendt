@@ -196,7 +196,7 @@ class K8sObserverOrchestrator:
             logger.info(f"Database URL: {database_url}")
 
             # Read values from config
-            namespace = config.services.k8s_observer.namespace
+            namespace = config.global_config.namespace
             heartbeat_frequency_minutes = config.services.k8s_observer.heartbeat_frequency_minutes
             resource_collection_interval_seconds = config.services.k8s_observer.resource_collection_interval_seconds
             node_power_collection_interval_seconds = config.services.k8s_observer.node_power_collection_interval_seconds

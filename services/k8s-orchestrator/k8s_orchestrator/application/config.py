@@ -9,3 +9,4 @@ class DecisionOrchestratorConfig:
     apply_timeout_seconds: float = 10.0
     simulation_guard_window_seconds: float = 10.0
     simulation_requeue_delay_seconds: float = 10.0
+    backlog_refresh_interval_seconds: float = 60.0

@@ -10,13 +10,16 @@ from odt_common.models import (
     DecisionPolicy
 )
 from k8s_orchestrator.domain import DecisionMaker, SystemSnapshot
+from k8s_orchestrator.domain.kubernetes import K8sActionKind, K8sSystemSnapshot
+from k8s_orchestrator.domain.kubernetes.utils import Utils
 
 logger = logging.getLogger(__name__)
 
 
 class K8sDecisionMaker(DecisionMaker):
-    def __init__(self, policy: DecisionPolicy) -> None:
+    def __init__(self, policy: DecisionPolicy, backlog_threshold: int) -> None:
         super().__init__(policy)
+        self.backlog_threshold = backlog_threshold
 
     def _get_score_bounds(self, proposals: list[EvaluatedProposal]) -> dict[str, tuple[Optional[float], Optional[float]]]:
         """Calculate the min and max values for each objective across the given proposals."""
@@ -137,8 +140,7 @@ class K8sDecisionMaker(DecisionMaker):
 
         return rank_group(proposals, 0)
 
-
-    def choose(self, proposals: list[EvaluatedProposal], current_snapshot: SystemSnapshot) -> Optional[Decision]:
+    def make_decision_from_proposals(self, proposals: list[EvaluatedProposal], current_snapshot: K8sSystemSnapshot) -> Optional[Decision]:
         logger.info(f"Evaluating {len(proposals)} proposals against current snapshot")
 
         if not proposals:
@@ -160,3 +162,20 @@ class K8sDecisionMaker(DecisionMaker):
 
         logger.info(f"Accepted proposal {accepted_proposal.proposal_id} based on state ID {accepted_proposal.based_on_state_id} with action {decision.action}")
         return decision
+
+    def make_decision_from_backlog_count(self, backlog_count: int, current_snapshot: K8sSystemSnapshot) -> Optional[Decision]:
+        if backlog_count == 0:
+            return None
+        if backlog_count > self.backlog_threshold:
+            # Auto scale up in from the smallest node type
+            for node_type in reversed(K8sSystemSnapshot.node_types):
+                current_count = Utils._get_node_type_current_count(current_snapshot, node_type)
+                max_available = current_snapshot.max_available_node_count.get(node_type, 0)
+                if current_count < max_available:
+                    request_node_count = Utils.get_requested_node_count(current_snapshot, relative_node_count_change={node_type: 1})
+                    decision, _, _ = Utils.build_change_node_count_decision(current_snapshot.topology, current_snapshot, request_node_count)
+                    logger.info(f"Backlog count {backlog_count} exceeds threshold {self.backlog_threshold}. Auto-scaling up by adding 1 {node_type} node.")
+                    return decision
+            logger.warning(f"Backlog count {backlog_count} exceeds threshold {self.backlog_threshold}, but no additional nodes are available to scale up.")
+            return None
+        return None

@@ -56,8 +56,10 @@ async def main() -> None:
         raise ValueError("RUN_ID environment variable is required")
 
     # Get config settings
+    namespace = config.global_config.namespace
     cpu_frequency_mhz = config.global_config.cpu_frequency_mhz
     refresh_interval_seconds = config.services.k8s_orchestrator.refresh_interval_seconds
+    backlog_threshold = config.services.k8s_orchestrator.backlog_threshold
     # TODO: Make the initial policy configurable
     initial_policy = RankedDecisionPolicy(
         policy_type="ranked",
@@ -78,11 +80,13 @@ async def main() -> None:
     # Initialize components
     system_adapter = K8sSystemAdapter(
         kubeconfig_path=kubeconfig_path,
-        cpu_frequency_mhz=cpu_frequency_mhz
+        cpu_frequency_mhz=cpu_frequency_mhz,
+        namespace=namespace
     )
     proposal_generator = K8sProposalGenerator()
     decision_maker = K8sDecisionMaker(
-        policy=initial_policy
+        policy=initial_policy,
+        backlog_threshold=backlog_threshold
     )
     state_publisher = KafkaStatePublisher(
         kafka_bootstrap_servers=kafka_bootstrap_servers,

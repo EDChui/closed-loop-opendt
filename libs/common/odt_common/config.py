@@ -42,6 +42,10 @@ class GlobalConfig(BaseModel):
     cpu_frequency_mhz: int = Field(
         default=2400, description="CPU frequency in MHz, assuming all nodes' cores have the same frequency", gt=0
     )
+    namespace: str = Field(
+        default="default",
+        description="Target Kubernetes namespace to monitor",
+    )
 
     @field_validator("speed_factor")
     @classmethod
@@ -70,10 +74,6 @@ class ScaphandreSourceConfig(BaseModel):
 class K8sObserverConfig(BaseModel):
     """K8s Observer service configuration."""
 
-    namespace: str = Field(
-        default="default",
-        description="Target Kubernetes namespace to monitor",
-    )
     heartbeat_frequency_minutes: int = Field(
         default=1,
         description="Interval in simulation minutes between workload heartbeat messages",
@@ -100,6 +100,11 @@ class K8sOrchestratorConfig(BaseModel):
 
     refresh_interval_seconds: int = Field(
         default=120, description="Interval in seconds to fetch real system status", gt=0
+    )
+    backlog_threshold: int = Field(
+        default=10,
+        description="Threshold for number of pending pods/jobs to trigger scaling actions",
+        ge=0,
     )
 
 

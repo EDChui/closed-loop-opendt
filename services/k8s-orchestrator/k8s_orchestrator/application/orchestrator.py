@@ -9,10 +9,11 @@ from typing import Optional
 from odt_common.models import (
     SimulationBatch,
     SimulationBatchReport,
+    Decision,
     EvaluatedProposal,
 )
 from k8s_orchestrator.application.config import DecisionOrchestratorConfig
-from k8s_orchestrator.application.events import Event, Priority, QueueItem, RefreshTick, ConfigChange
+from k8s_orchestrator.application.events import Event, Priority, QueueItem, RefreshTick, ConfigChange, BacklogCountFetch
 from k8s_orchestrator.application.ports import SystemPort, SimulationGateway, StatePublisher, RuntimeConfigGateway, HistoryPort
 from k8s_orchestrator.domain import (
     DecisionMaker,
@@ -58,7 +59,9 @@ class DecisionOrchestrator:
         self._seq = itertools.count()
 
         self.refresh_requested = asyncio.Event()
+        self.backlog_fetch_requested = asyncio.Event()
         self.next_refresh_due_monotonic = time.monotonic() + self.config.refresh_interval_seconds
+        self.next_backlog_fetch_due_monotonic = time.monotonic() + self.config.backlog_refresh_interval_seconds
 
     @staticmethod
     def _new_state_id() -> str:
@@ -70,6 +73,7 @@ class DecisionOrchestrator:
 
         async with asyncio.TaskGroup() as tg:
             tg.create_task(self._refresh_scheduler())
+            tg.create_task(self._backlog_fetch_scheduler())
             tg.create_task(self._simulation_reader())
             tg.create_task(self._runtime_config_watcher())
             tg.create_task(self._event_loop())
@@ -89,6 +93,20 @@ class DecisionOrchestrator:
                     Priority.REFRESH,
                     RefreshTick(
                         reason="periodic",
+                        scheduled_at_monotonic=time.monotonic(),
+                    ),
+                )
+
+    async def _backlog_fetch_scheduler(self) -> None:
+        while True:
+            self.next_backlog_fetch_due_monotonic = time.monotonic() + self.config.backlog_refresh_interval_seconds
+            await asyncio.sleep(self.config.backlog_refresh_interval_seconds)
+
+            if not self.backlog_fetch_requested.is_set():
+                self.backlog_fetch_requested.set()
+                await self._enqueue(
+                    Priority.BACKLOG_FETCH,
+                    BacklogCountFetch(
                         scheduled_at_monotonic=time.monotonic(),
                     ),
                 )
@@ -117,6 +135,8 @@ class DecisionOrchestrator:
 
                 if isinstance(event, RefreshTick):
                     await self._handle_refresh(event)
+                elif isinstance(event, BacklogCountFetch):
+                    await self._handle_backlog_count_fetch(event)
                 elif isinstance(event, SimulationBatchReport):
                     await self._handle_simulation_report(event)
                 elif isinstance(event, ConfigChange):
@@ -125,6 +145,41 @@ class DecisionOrchestrator:
                 logger.error(f"Timeout while processing event: {e}", exc_info=True)
             except Exception as e:
                 logger.error(f"Error processing event: {e}", exc_info=True)
+
+    async def apply_and_record_decision(self, decision: Optional[Decision]) -> None:
+        if decision is None:
+            logger.warning("No decision to apply")
+            return
+        if self.current_state is None:
+            logger.warning("No current state available, cannot apply decision")
+            return
+
+        try:
+            await asyncio.wait_for(
+                self.real_system.apply_decision(decision),
+                timeout=self.config.apply_timeout_seconds,
+            )
+            await self.history_port.record_applied_decision(
+                state_id=self.current_state.state_id,
+                decision=decision,
+                success=True
+            )
+        except TimeoutError as e:
+            logger.error(f"Timeout while applying decision: {e}", exc_info=True)
+            await self.history_port.record_applied_decision(
+                state_id=self.current_state.state_id,
+                decision=decision,
+                success=False,
+                error_message=f"Timeout: {e}"
+            )
+        except Exception as e:
+            logger.error(f"Error while applying decision: {e}", exc_info=True)
+            await self.history_port.record_applied_decision(
+                state_id=self.current_state.state_id,
+                decision=decision,
+                success=False,
+                error_message=str(e)
+            )
 
     # ============================
     # Handle refresh event
@@ -180,6 +235,34 @@ class DecisionOrchestrator:
         ]
         for batch_id in stale_batch_ids:
             self.pending_batches.pop(batch_id, None)
+    
+    # ============================
+    # Handle backlog count fetch
+    # ============================
+
+    async def _handle_backlog_count_fetch(self, event: BacklogCountFetch) -> None:
+        try:
+            backlog_count = await asyncio.wait_for(
+                self.real_system.fetch_backlog_count(),
+                timeout=self.config.fetch_timeout_seconds,
+            )
+
+            if self.current_state is None:
+                logger.warning("No current state available, cannot make decision based on backlog count")
+                return
+
+            decision = self.decision_maker.make_decision_from_backlog_count(backlog_count, self.current_state.snapshot)
+            if decision is None:
+                logger.warning("No decision made based on backlog count")
+
+            await self.apply_and_record_decision(decision)
+            await self._refresh_cycle(cause=f"post-backlog-fetch:{backlog_count}")
+        except TimeoutError as e:
+            logger.error(f"Timeout while fetching backlog count: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Error while fetching backlog count: {e}", exc_info=True)
+        finally:
+            self.backlog_fetch_requested.clear()
 
     # ============================
     # Handle simulation report
@@ -210,38 +293,13 @@ class DecisionOrchestrator:
         if self.current_state is None:
             return
 
-        decision = self.decision_maker.choose(evaluated, self.current_state.snapshot)
+        decision = self.decision_maker.make_decision_from_proposals(evaluated, self.current_state.snapshot)
 
         if decision is None:
             logger.warning(f"No decision chosen for batch ID {report.batch_id}, skipping application")
             return
 
-        try:
-            await asyncio.wait_for(
-                self.real_system.apply_decision(decision),
-                timeout=self.config.apply_timeout_seconds,
-            )
-            await self.history_port.record_applied_decision(
-                state_id=self.current_state.state_id,
-                decision=decision,
-                success=True
-            )
-        except TimeoutError as e:
-            logger.error(f"Timeout while applying decision for batch ID {report.batch_id}: {e}", exc_info=True)
-            await self.history_port.record_applied_decision(
-                state_id=self.current_state.state_id,
-                decision=decision,
-                success=False,
-                error_message=f"Timeout: {e}"
-            )
-        except Exception as e:
-            logger.error(f"Error while applying decision for batch ID {report.batch_id}: {e}", exc_info=True)
-            await self.history_port.record_applied_decision(
-                state_id=self.current_state.state_id,
-                decision=decision,
-                success=False,
-                error_message=str(e)
-            )
+        await self.apply_and_record_decision(decision)
 
         # Always re-read real state after acting
         await self._refresh_cycle(cause=f"post-apply:{decision.action}")
@@ -271,10 +329,15 @@ class DecisionOrchestrator:
         if self.refresh_requested.is_set():
             logger.info(f"🔄 [4] REQUEUE simulation report for batch ID {report.batch_id} - refresh is in progress")
             return ReportDisposition.REQUEUE, self.config.simulation_requeue_delay_seconds
+        
+        # 5. Backlog count fetch is happening
+        if self.backlog_fetch_requested.is_set():
+            logger.info(f"🔄 [5] REQUEUE simulation report for batch ID {report.batch_id} - backlog count fetch is in progress")
+            return ReportDisposition.REQUEUE, self.config.simulation_requeue_delay_seconds
 
-        # 5. Do not start a decision too close too the next scheduled refresh
+        # 6. Do not start a decision too close too the next scheduled refresh
         if now_mono + self.config.simulation_guard_window_seconds >= self.next_refresh_due_monotonic:
-            logger.info(f"🔄 [5] REQUEUE simulation report for batch ID {report.batch_id} - too close to the next scheduled refresh")
+            logger.info(f"🔄 [6] REQUEUE simulation report for batch ID {report.batch_id} - too close to the next scheduled refresh")
             delay = max(self.config.simulation_requeue_delay_seconds, self.next_refresh_due_monotonic - now_mono + self.config.simulation_requeue_delay_seconds)
             return ReportDisposition.REQUEUE, delay
 

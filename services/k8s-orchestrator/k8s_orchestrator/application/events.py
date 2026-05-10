@@ -14,13 +14,17 @@ class RefreshTick:
 class ConfigChange:
     new_policy: DecisionPolicy
 
+@dataclass(frozen=True)
+class BacklogCountFetch:
+    scheduled_at_monotonic: float
 
-Event = Union[RefreshTick, SimulationBatchReport, ConfigChange]
 
+Event = Union[RefreshTick, ConfigChange, SimulationBatchReport, BacklogCountFetch]
 
 class Priority(enum.IntEnum):
     REFRESH = 0
     CONFIG = 5
+    BACKLOG_FETCH = 7
     SIMULATION = 10
 
 

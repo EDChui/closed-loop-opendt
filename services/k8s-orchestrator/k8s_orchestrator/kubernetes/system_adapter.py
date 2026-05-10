@@ -25,8 +25,10 @@ class K8sSystemAdapter(SystemPort):
         self,
         kubeconfig_path: str,
         cpu_frequency_mhz: int,
+        namespace: str = "default",
     ):
         self.kubeconfig_path = kubeconfig_path
+        self.namespace = namespace
         # Assume all nodes have the same CPU frequency
         # TODO: (Low priority) Can be extracted from node info in the future if needed
         self.cpu_frequency_mhz = cpu_frequency_mhz
@@ -115,6 +117,14 @@ class K8sSystemAdapter(SystemPort):
         return K8sSystemSnapshot(
             topology=topology,
             max_available_node_count=max_available_node_count
+        )
+    
+    async def fetch_backlog_count(self) -> int:
+        pods = self.core_api.list_namespaced_pod(namespace=self.namespace).items
+        return sum(
+            1
+            for pod in pods
+            if getattr(getattr(pod, "status", None), "phase", None) == "Pending"
         )
 
     # ====================

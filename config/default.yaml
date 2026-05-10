@@ -4,13 +4,13 @@ global:
   speed_factor: 1.0 # 1.0 = Realtime, -1 = Max Speed
   calibration_enabled: false
   cpu_frequency_mhz: 2400 # Assume all nodes have the same CPU frequency
+  namespace: "default"
 
 services:
   k8s-orchestrator:
     refresh_interval_seconds: 30
 
   k8s-observer:
-    namespace: "default"
     heartbeat_frequency_minutes: 1
     resource_collection_interval_seconds: 15
     node_power_collection_interval_seconds: 15
