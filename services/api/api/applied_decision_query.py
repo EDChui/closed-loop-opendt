@@ -95,6 +95,7 @@ class AppliedDecisionQuery:
                     "success": success,
                     "error_message": payload.get("error_message") or None,
                     "action": action,
+                    "source": payload.get("source") or None,
                     action: 1,
                     **flattened_details,
                 }

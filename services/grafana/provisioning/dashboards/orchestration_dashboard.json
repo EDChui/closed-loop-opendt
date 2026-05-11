@@ -433,7 +433,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "^(action|state_id|success|error_message|from_.*|to_.*)$"
+              "options": "^(action|source|state_id|success|error_message|from_.*|to_.*)$"
             },
             "properties": [
               {
@@ -654,6 +654,18 @@
                 "value": "To Endpoint"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "source"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Source"
+              }
+            ]
           }
         ]
       },
@@ -730,13 +742,14 @@
             "indexByName": {
               "timestamp": 0,
               "action": 1,
-              "from_cloud": 2,
-              "from_endpoint": 3,
-              "to_cloud": 4,
-              "to_endpoint": 5,
-              "state_id": 6,
-              "success": 7,
-              "error_message": 8
+              "source": 2,
+              "from_cloud": 3,
+              "from_endpoint": 4,
+              "to_cloud": 5,
+              "to_endpoint": 6,
+              "state_id": 7,
+              "success": 8,
+              "error_message": 9
             },
             "renameByName": {
               "timestamp": "Recorded At",
@@ -747,7 +760,8 @@
               "to_endpoint": "To Endpoint",
               "state_id": "State ID",
               "success": "Success",
-              "error_message": "Error"
+              "error_message": "Error",
+              "source": "Source"
             }
           }
         }

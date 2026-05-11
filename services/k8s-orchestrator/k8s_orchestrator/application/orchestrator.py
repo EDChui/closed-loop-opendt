@@ -146,7 +146,7 @@ class DecisionOrchestrator:
             except Exception as e:
                 logger.error(f"Error processing event: {e}", exc_info=True)
 
-    async def apply_and_record_decision(self, decision: Optional[Decision]) -> None:
+    async def apply_and_record_decision(self, decision: Optional[Decision], source: str = "") -> None:
         if decision is None:
             logger.warning("No decision to apply")
             return
@@ -162,7 +162,8 @@ class DecisionOrchestrator:
             await self.history_port.record_applied_decision(
                 state_id=self.current_state.state_id,
                 decision=decision,
-                success=True
+                success=True,
+                source=source
             )
         except TimeoutError as e:
             logger.error(f"Timeout while applying decision: {e}", exc_info=True)
@@ -170,7 +171,8 @@ class DecisionOrchestrator:
                 state_id=self.current_state.state_id,
                 decision=decision,
                 success=False,
-                error_message=f"Timeout: {e}"
+                error_message=f"Timeout: {e}",
+                source=source
             )
         except Exception as e:
             logger.error(f"Error while applying decision: {e}", exc_info=True)
@@ -178,7 +180,8 @@ class DecisionOrchestrator:
                 state_id=self.current_state.state_id,
                 decision=decision,
                 success=False,
-                error_message=str(e)
+                error_message=str(e),
+                source=source
             )
 
     # ============================
@@ -255,7 +258,7 @@ class DecisionOrchestrator:
             if decision is None:
                 logger.warning("No decision made based on backlog count")
 
-            await self.apply_and_record_decision(decision)
+            await self.apply_and_record_decision(decision, source="backlog_count_fetch")
             await self._refresh_cycle(cause=f"post-backlog-fetch:{backlog_count}")
         except TimeoutError as e:
             logger.error(f"Timeout while fetching backlog count: {e}", exc_info=True)
@@ -299,7 +302,7 @@ class DecisionOrchestrator:
             logger.warning(f"No decision chosen for batch ID {report.batch_id}, skipping application")
             return
 
-        await self.apply_and_record_decision(decision)
+        await self.apply_and_record_decision(decision, source="simulation_report")
 
         # Always re-read real state after acting
         await self._refresh_cycle(cause=f"post-apply:{decision.action}")

@@ -40,6 +40,7 @@ class JsonlHistoryRepository(HistoryPort):
         decision: Decision,
         success: bool,
         error_message: str = "",
+        source: str = ""
     ) -> None:
         output_file = self.output_dir / "applied_decisions.jsonl"
 
@@ -48,7 +49,8 @@ class JsonlHistoryRepository(HistoryPort):
             "state_id": state_id,
             "success": success,
             "error_message": error_message,
-            "decision": decision.model_dump(mode="json")
+            "decision": decision.model_dump(mode="json"),
+            "source": source
         }
 
         self._append_jsonl(output_file, payload)

@@ -9,7 +9,7 @@ global:
 services:
   k8s-orchestrator:
     refresh_interval_seconds: 30
-    backlog_refresh_interval_seconds: 360
+    backlog_refresh_interval_seconds: 180
 
   k8s-observer:
     heartbeat_frequency_minutes: 1

@@ -12,4 +12,5 @@ class HistoryPort(Protocol):
         decision: Decision,
         success: bool,
         error_message: str = "",
+        source: str = ""
     ) -> None: ...
