@@ -64,8 +64,8 @@ class K8sSystemAdapter(SystemPort):
                 cpu_power_model = MseCPUPowerModel(
                     modelType="mse",
                     power=300,
-                    idlePower=0.03,
-                    maxPower=5,
+                    idlePower=1.37,
+                    maxPower=6.93,
                     calibrationFactor=4
                 )
             elif shape.node_type == "endpoint":

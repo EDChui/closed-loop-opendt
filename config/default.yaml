@@ -9,7 +9,8 @@ global:
 services:
   k8s-orchestrator:
     refresh_interval_seconds: 30
-    backlog_refresh_interval_seconds: 180
+    backlog_refresh_interval_seconds: 210
+    backlog_threshold: 10
 
   k8s-observer:
     heartbeat_frequency_minutes: 1
@@ -43,6 +44,14 @@ services:
 
   simulator:
     simulation_frequency_minutes: 5
+
+  calibrator:
+    calibrated_property: "cpuPowerModel.calibrationFactor"
+    min_value: 3
+    max_value: 9
+    linspace_points: 10
+    max_parallel_workers: 4
+    mape_window_minutes: 60
 
 kafka:
   topics:
