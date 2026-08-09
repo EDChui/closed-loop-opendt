@@ -1,12 +1,4 @@
-<a href="atlarge-research.github.io/opendt/">
-    <img src="logo/logo-128.png" alt="OpenDT logo" title="OpenDT" align="right" height="100" />
-</a>
-
-# OpenDT
-
-**Open Digital Twin for Datacenters**
-
-OpenDT is a distributed system that creates a real-time digital twin of datacenter infrastructure. It replays historical workload data through the [OpenDC](https://opendc.org/) simulator to predict power consumption, enabling What-If analysis without touching live hardware.
+# Closed-loop Digital Twin
 
 ## Upstream Basis and Adaptation
 
