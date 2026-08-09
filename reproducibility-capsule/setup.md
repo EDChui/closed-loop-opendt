@@ -116,3 +116,51 @@ In `cloud_controller_echui`, copy the [`scripts/k8s_control_panel.py`](../script
 pip install kubernetes click
 python3 k8s_control_panel.py settype worker-1 cloud/edge/endpoint
 ```
+
+### Scaphandre API for Remote RAPL Metrics
+
+When `k8s-observer` needs to query RAPL energy metrics for a VM hosted on a different physical machine, the **Scaphandre API** must be deployed on that physical machine.
+
+`k8s-observer` normally reads Scaphandre measurements from the local host. However, VMs in the Kubernetes cluster may be distributed across `node1`–`node5`. The Scaphandre API provides an HTTP interface that allows `NodePowerProducer` to retrieve the Scaphandre/RAPL energy readings associated with a remote VM.
+
+The API should run directly on each physical machine whose VM energy metrics need to be queried. It exposes endpoints such as:
+
+```text
+GET /health
+GET /scaphandre
+GET /scaphandre/{node_name}
+```
+
+For example, if `cloud0_echui` is hosted on `node1`, `k8s-observer` can be configured to retrieve its energy reading from:
+
+```yaml
+scaphandre_sources:
+  - name: "cloud0_echui"
+    access_mode: "remote"
+    url: "http://node1:8088/scaphandre/cloud0_echui"
+```
+
+The complete installation, configuration, and startup instructions are documented in the [Scaphandre API README](../services/scaphandre-api/scaphandre_api/README.md).
+
+In particular, the setup includes starting Scaphandre in QEMU mode on the physical machine:
+
+```bash
+sudo scaphandre qemu
+```
+
+and running the API service on port `8088`. Refer to the README for Python dependencies, service startup commands, API tests, and networking considerations.
+
+## Workload Generator
+
+The Kubernetes workload generator used for the experiments is available at [EDChui/k8s-workload-generator](https://github.com/EDChui/k8s-workload-generator).
+
+It can generate Kubernetes jobs in batches or according to a Poisson arrival process. It also supports multi-stage workload configurations through YAML files and reproducible workload generation using a random seed.
+
+Clone the repository on the machine from which the workloads will be generated:
+
+```bash
+git clone https://github.com/EDChui/k8s-workload-generator.git
+cd k8s-workload-generator
+```
+
+Follow the setup and usage instructions in the repository's `README.md`. The README includes examples for batch workloads, Poisson workloads configured through command-line arguments, and staged Poisson workloads configured through YAML.
