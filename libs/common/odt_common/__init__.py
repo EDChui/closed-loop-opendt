@@ -5,12 +5,12 @@ __version__ = "0.1.0"
 from odt_common.config import (
     AppConfig,
     CalibratorConfig,
-    DcMockConfig,
+    K8sObserverConfig,
     DynamicConfigEvent,
     GlobalConfig,
     ServicesConfig,
     SimulatorConfig,
-    WorkloadContext,
+    K8sWorkloadContext,
     load_config_from_env,
 )
 from odt_common.models import Consumption, Fragment, Task, Topology, TopologySnapshot
@@ -26,10 +26,10 @@ __all__ = [
     "AppConfig",
     "GlobalConfig",
     "ServicesConfig",
-    "DcMockConfig",
+    "K8sObserverConfig",
     "SimulatorConfig",
     "CalibratorConfig",
-    "WorkloadContext",
+    "K8sWorkloadContext",
     "DynamicConfigEvent",
     "load_config_from_env",
     "ResultCache",

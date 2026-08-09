@@ -13,6 +13,8 @@ from typing import Any
 
 import pandas as pd
 
+from .result_analyzer import SimulationResultAnalyzer
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +31,7 @@ class SimulationResultProcessor:
         self.simulator_output_dir = Path(simulator_output_dir)
         self.agg_results_file = self.simulator_output_dir / "agg_results.parquet"
         self.last_processed_time: datetime | None = None
+        self.result_analyzer = SimulationResultAnalyzer()
 
         # Initialize aggregated results file if needed
         if self.agg_results_file.exists():
@@ -44,6 +47,9 @@ class SimulationResultProcessor:
                         )
             except Exception as e:
                 logger.warning(f"Could not read existing aggregated results: {e}")
+
+    def get_last_processed_time(self) -> datetime | None:
+        return self.last_processed_time
 
     def process_simulation_results(
         self,
@@ -66,55 +72,37 @@ class SimulationResultProcessor:
         )
 
         try:
-            # Read power source data from OpenDC output (search recursively)
-            power_files = list(output_dir.rglob("powerSource.parquet"))
-
-            if not power_files:
-                logger.warning(f"No powerSource.parquet found in {output_dir}")
-                return
-
-            if len(power_files) > 1:
-                logger.warning(
-                    f"Found {len(power_files)} powerSource.parquet files, using first one"
-                )
-
-            power_file = power_files[0]
-            logger.debug(f"Found power source file: {power_file.relative_to(output_dir)}")
-
-            power_df = pd.read_parquet(power_file)
-            logger.debug(f"Read {len(power_df)} rows from power source file")
-
-            # Convert timestamp_absolute (in milliseconds) to datetime
-            if "timestamp_absolute" not in power_df.columns:
-                logger.error("No timestamp_absolute column found in power data")
-                return
-
-            # Convert from milliseconds to datetime (UTC-aware)
-            power_df["timestamp"] = pd.to_datetime(
-                power_df["timestamp_absolute"], unit="ms", utc=True
-            )
-            logger.debug(f"Converted timestamp_absolute to datetime for {len(power_df)} rows")
-
-            # Clip to only new data since last processed time (start boundary)
-            if self.last_processed_time is not None:
-                original_count = len(power_df)
-                power_df = power_df.loc[power_df["timestamp"] > self.last_processed_time].copy()
-                logger.debug(
-                    f"Clipped data at start: {original_count} -> {len(power_df)} rows "
-                    f"(keeping data after {self.last_processed_time.isoformat()})"
-                )
-
-            # Clip data at end boundary (aligned_simulated_time)
-            original_count = len(power_df)
-            power_df = power_df.loc[power_df["timestamp"] <= aligned_simulated_time].copy()
-            logger.debug(
-                f"Clipped data at end: {original_count} -> {len(power_df)} rows "
-                f"(keeping data up to {aligned_simulated_time.isoformat()})"
+            power_df = self.result_analyzer.get_clipped_power(
+                output_dir=output_dir,
+                from_time=self.last_processed_time,
+                to_time=aligned_simulated_time
             )
 
-            if power_df.empty:
-                logger.info("No new data to append after clipping")
+            if power_df is None or power_df.empty:
+                logger.info("No new power data to append after clipping")
                 return
+            
+            utilization_df = self.result_analyzer.get_aggregated_utilization(
+                output_dir=output_dir,
+                from_time=self.last_processed_time,
+                to_time=aligned_simulated_time
+            )
+
+            if utilization_df is None or utilization_df.empty:
+                logger.info("No new utilization data to append after clipping")
+                return None
+
+            # Merge utilization data into power_df on timestamp_absolute
+            if utilization_df is not None and not utilization_df.empty:
+                power_df = power_df.merge(
+                    utilization_df,
+                    on="timestamp_absolute",
+                    how="left"
+                )
+                logger.debug("Merged utilization data into power data")
+            else:
+                logger.info("No new utilization data to merge into power data")
+                power_df["utilization_rate"] = pd.NA  # Add column with NA if no utilization data
 
             # Add metadata columns
             power_df["run_number"] = run_number
@@ -128,13 +116,14 @@ class SimulationResultProcessor:
                 "energy_usage",
                 "carbon_intensity",
                 "carbon_emission",
+                "utilization_rate",
                 "cached",
             ]
 
             # Check if all required columns exist
             missing_columns = [col for col in required_columns if col not in power_df.columns]
             if missing_columns:
-                logger.warning(f"Missing columns in power data: {missing_columns}")
+                logger.warning(f"Missing columns in processed data: {missing_columns}")
                 # Only select columns that exist
                 available_columns = [col for col in required_columns if col in power_df.columns]
                 power_df = power_df[available_columns].copy()

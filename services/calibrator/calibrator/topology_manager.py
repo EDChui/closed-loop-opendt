@@ -6,6 +6,7 @@ Handles topology subscription, modification, and publishing.
 import copy
 import logging
 import threading
+from datetime import datetime, timezone
 
 from odt_common.models import Topology, TopologySnapshot
 from odt_common.utils import get_kafka_consumer, get_kafka_producer, send_message
@@ -20,7 +21,7 @@ class TopologyManager:
         self,
         kafka_bootstrap_servers: str,
         dc_topology_topic: str,
-        sim_topology_topic: str,
+        sim_calibration_topic: str,
         consumer_group: str = "calibrator-topology",
     ):
         """Initialize the topology manager.
@@ -28,16 +29,16 @@ class TopologyManager:
         Args:
             kafka_bootstrap_servers: Kafka broker addresses
             dc_topology_topic: Kafka topic for real topology (dc.topology)
-            sim_topology_topic: Kafka topic for simulated topology (sim.topology)
+            sim_calibration_topic: Kafka topic for simulated topology (sim.calibration)
             consumer_group: Kafka consumer group ID
         """
         self.kafka_bootstrap_servers = kafka_bootstrap_servers
         self.dc_topology_topic = dc_topology_topic
-        self.sim_topology_topic = sim_topology_topic
+        self.sim_calibration_topic = sim_calibration_topic
         self.consumer_group = consumer_group
 
         # Topology state
-        self._real_topology: Topology | None = None
+        self._topology_snapshot: TopologySnapshot | None = None
         self._sim_topology: Topology | None = None
         self._lock = threading.Lock()
 
@@ -49,7 +50,7 @@ class TopologyManager:
         self._producer = get_kafka_producer(kafka_bootstrap_servers)
 
         logger.info(
-            f"Initialized TopologyManager for topics {dc_topology_topic}, {sim_topology_topic}"
+            f"Initialized TopologyManager for topics {dc_topology_topic}, {sim_calibration_topic}"
         )
 
     def start(self) -> None:
@@ -85,7 +86,7 @@ class TopologyManager:
 
         try:
             consumer = get_kafka_consumer(
-                topics=[self.dc_topology_topic, self.sim_topology_topic],
+                topics=[self.dc_topology_topic, self.sim_calibration_topic],
                 group_id=self.consumer_group,
                 bootstrap_servers=self.kafka_bootstrap_servers,
             )
@@ -100,20 +101,15 @@ class TopologyManager:
                     if message.topic == self.dc_topology_topic:
                         # Real topology (wrapped in TopologySnapshot)
                         snapshot = TopologySnapshot(**message.value)
+                        logger.info(f"📡 Received real topology snapshot (id: {snapshot.state_id}, timestamp: {snapshot.timestamp})")
                         with self._lock:
-                            self._real_topology = snapshot.topology
-                            # Initialize sim topology if not set
-                            if self._sim_topology is None:
-                                self._sim_topology = copy.deepcopy(self._real_topology)
-                                logger.info("Initialized simulated topology from real topology")
+                            self._topology_snapshot = snapshot
+                            self._sim_topology = copy.deepcopy(self._topology_snapshot.topology)
                         logger.debug("Updated real topology")
 
-                    elif message.topic == self.sim_topology_topic:
-                        # Simulated topology (raw Topology)
-                        topology = Topology(**message.value)
-                        with self._lock:
-                            self._sim_topology = topology
-                        logger.debug("Updated simulated topology")
+                    elif message.topic == self.sim_calibration_topic:
+                        # Disabled for now
+                        return
 
                 except Exception as e:
                     logger.error(f"Error processing topology message: {e}", exc_info=True)
@@ -179,7 +175,7 @@ class TopologyManager:
         return current
 
     def publish_topology(self, topology: Topology) -> bool:
-        """Publish topology to simulated topology topic.
+        """Publish topologySnapshot to calibration topic.
 
         Args:
             topology: Topology to publish
@@ -188,15 +184,20 @@ class TopologyManager:
             True if published successfully, False otherwise
         """
         try:
-            message_data = topology.model_dump(mode="json")
+            topology_snapshot = TopologySnapshot(
+                state_id=self._topology_snapshot.state_id if self._topology_snapshot else "unknown",
+                timestamp=self._topology_snapshot.timestamp if self._topology_snapshot else datetime.now(timezone.utc),
+                topology=topology
+            )
+            message_data = topology_snapshot.model_dump(mode="json")
             # Use a consistent key for compacted topic (only latest topology is kept)
             send_message(
                 producer=self._producer,
-                topic=self.sim_topology_topic,
+                topic=self.sim_calibration_topic,
                 message=message_data,
                 key="topology",  # Required for compacted topics
             )
-            logger.info(f"Published topology to {self.sim_topology_topic}")
+            logger.info(f"Published topology to {self.sim_calibration_topic}")
             return True
 
         except Exception as e:

@@ -1,0 +1,96 @@
+# OpenDT Default Configuration
+
+global:
+  speed_factor: 1.0 # 1.0 = Realtime, -1 = Max Speed
+  calibration_enabled: false
+  cpu_frequency_mhz: 2400 # Assume all nodes have the same CPU frequency
+  namespace: "default"
+
+services:
+  k8s-orchestrator:
+    refresh_interval_seconds: 30
+    backlog_refresh_interval_seconds: 210
+    backlog_threshold: 10
+
+  k8s-observer:
+    heartbeat_frequency_minutes: 1
+    resource_collection_interval_seconds: 15
+    node_power_collection_interval_seconds: 15
+    scaphandre_sources:
+      - name: "cloud0_echui"
+        access_mode: "remote"
+        url: "http://node1:8088/scaphandre/cloud0_echui"
+      - name: "cloud1_echui"
+        access_mode: "remote"
+        url: "http://node1:8088/scaphandre/cloud1_echui"
+      - name: "cloud2_echui"
+        access_mode: "remote"
+        url: "http://node2:8088/scaphandre/cloud2_echui"
+      - name: "cloud3_echui"
+        access_mode: "remote"
+        url: "http://node2:8088/scaphandre/cloud3_echui"
+      - name: "cloud4_echui"
+        access_mode: "remote"
+        url: "http://node3:8088/scaphandre/cloud4_echui"
+      - name: "cloud5_echui"
+        access_mode: "remote"
+        url: "http://node3:8088/scaphandre/cloud5_echui"
+      - name: "cloud6_echui"
+        access_mode: "remote"
+        url: "http://node4:8088/scaphandre/cloud6_echui"
+      - name: "cloud7_echui"
+        access_mode: "remote"
+        url: "http://node4:8088/scaphandre/cloud7_echui"
+
+  simulator:
+    simulation_frequency_minutes: 5
+
+kafka:
+  topics:
+    workload:
+      name: "dc.workload"
+      config:
+        # 24 hours
+        retention.ms: "86400000"
+    power:
+      name: "dc.power"
+      config:
+        # 1 hour
+        retention.ms: "3600000"
+    topology:
+      name: "dc.topology"
+      config:
+        # Compacted topic - keeps latest topology
+        cleanup.policy: "compact"
+        # Keep at least 1 hour
+        min.compaction.lag.ms: "3600000"
+    objectives:
+      name: "dc.objectives"
+      config:
+        cleanup.policy: "compact"
+        min.compaction.lag.ms: "0"
+    system:
+      # TODO: Remove? Actual usage unknown
+      name: "sys.config"
+      config:
+        cleanup.policy: "compact"
+    sim_calibration:
+      name: "sim.calibration"
+      config:
+        # Compacted topic - keeps latest simulated topology
+        cleanup.policy: "compact"
+        min.compaction.lag.ms: "0"
+    sim_batch:
+      name: "sim.batch"
+      config:
+        retention.ms: "300000" # 5 minutes retention for simulation batches
+    sim_batch_report:
+      name: "sim.batch.report"
+      config:
+        retention.ms: "600000" # 10 minutes retention for simulation batch reports
+    results:
+      # TODO: Remove? Actual usage unknown
+      name: "sim.results"
+      config:
+        # 7 days retention for simulation results
+        retention.ms: "604800000"

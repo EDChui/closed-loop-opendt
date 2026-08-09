@@ -53,6 +53,26 @@ services:
     networks:
       - opendt-network
 
+  postgres:
+    image: postgres:16
+    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-postgres
+    environment:
+      POSTGRES_DB: opendt
+      POSTGRES_USER: opendt
+      POSTGRES_PASSWORD: opendt
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opendt -d opendt"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - opendt-network
+
   # ============================================================================
   # INFRASTRUCTURE INITIALIZATION
   # ============================================================================
@@ -62,6 +82,7 @@ services:
       context: .
       dockerfile: services/kafka-init/Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME:-opendt}-kafka-init
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       CONFIG_FILE: /app/config/simulation.yaml
       PYTHONUNBUFFERED: 1
@@ -76,40 +97,107 @@ services:
       - opendt-network
     restart: "no"
 
+  postgres-init:
+    build:
+      context: .
+      dockerfile: services/postgres-init/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-postgres-init
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    environment:
+      DATABASE_URL: postgresql+psycopg://opendt:opendt@postgres:5432/opendt
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - ./services/postgres-init:/app/services/postgres-init
+      - ./libs/common:/app/libs/common
+      - ./libs/k8s-observability:/app/libs/k8s-observability
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - opendt-network
+    restart: "no"
+
   # ============================================================================
   # PYTHON MICROSERVICES
   # ============================================================================
 
-  dc-mock:
+  k8s-observer:
     build:
       context: .
-      dockerfile: services/dc-mock/Dockerfile
-    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-dc-mock
+      dockerfile: services/k8s-observer/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-k8s-observer
+    # Required to run as root for accessing Scaphandre data
+    user: "0:0"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      WORKLOAD_DIR: /app/workload
       CONFIG_FILE: /app/config.yaml
       PYTHONUNBUFFERED: 1
+      # Environment variables
+      KUBECONFIG: /kube/config
+      PROMETHEUS_URL: http://host.docker.internal:9091
+      SCAPHANDRE_BASE_PATH: /hostfs/var/lib/libvirt/scaphandre
+      DATABASE_URL: postgresql+psycopg://opendt:opendt@postgres:5432/opendt
     volumes:
       # Mount source code for hot reload
-      - ./services/dc-mock:/app/services/dc-mock
+      - ./services/k8s-observer:/app/services/k8s-observer
       - ./libs/common:/app/libs/common
-      # Mount specific workload directory
-      - ${WORKLOAD_PATH:-./workload/SURF}:/app/workload:ro
+      - ./libs/k8s-observability:/app/libs/k8s-observability
       # Mount configuration file
       - ${CONFIG_PATH:-./config/default.yaml}:/app/config.yaml:ro
+      # Kubeconfig for accessing Kubernetes API
+      - ${HOME}/.kube:/kube:ro
+      # Mount host Scaphandre data read-only for VM power monitoring
+      - /var/lib/libvirt/scaphandre:/hostfs/var/lib/libvirt/scaphandre:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres-init:
+        condition: service_completed_successfully
+    networks:
+      - opendt-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: python -m k8s_observer.main
+  
+  k8s-orchestrator:
+    build:
+      context: .
+      dockerfile: services/k8s-orchestrator/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-opendt}-k8s-orchestrator
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      CONFIG_FILE: /app/config.yaml
+      PYTHONUNBUFFERED: 1
+      KUBECONFIG: /kube/config
+      RUN_ID: ${RUN_ID}
+      DATA_DIR: /app/data
+    volumes:
+      # Mount source code for hot reload
+      - ./services/k8s-orchestrator:/app/services/k8s-orchestrator
+      - ./libs/common:/app/libs/common
+      - ./libs/k8s-observability:/app/libs/k8s-observability
+      # Mount configuration file
+      - ${CONFIG_PATH:-./config/default.yaml}:/app/config.yaml:ro
+      # Kubeconfig for accessing Kubernetes API
+      - ${HOME}/.kube:/kube:ro
+      # Mount data directory for run outputs
+      - ./data:/app/data
     depends_on:
       kafka-init:
         condition: service_completed_successfully
     networks:
       - opendt-network
-    command: python -m dc_mock.main
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: python -m k8s_orchestrator.main
 
   simulator:
     build:
       context: .
       dockerfile: services/simulator/Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME:-opendt}-simulator
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CONFIG_FILE: /app/config.yaml
@@ -141,6 +229,7 @@ services:
       context: .
       dockerfile: services/calibrator/Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME:-opendt}-calibrator
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CONFIG_FILE: /app/config.yaml
@@ -173,6 +262,7 @@ services:
       context: .
       dockerfile: services/api/Dockerfile
     container_name: ${COMPOSE_PROJECT_NAME:-opendt}-api
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CONFIG_FILE: /app/config/simulation.yaml
@@ -180,12 +270,14 @@ services:
       RUN_ID: ${RUN_ID}
       DATA_DIR: /app/data
       WORKLOAD_DIR: /app/workload
+      DATABASE_URL: postgresql+psycopg://opendt:opendt@postgres:5432/opendt
     ports:
       - "3001:8000"
     volumes:
       # Mount source code for hot reload
       - ./services/api:/app/services/api
       - ./libs/common:/app/libs/common
+      - ./libs/k8s-observability:/app/libs/k8s-observability
       # Mount configuration file
       - ${CONFIG_PATH:-./config/default.yaml}:/app/config/simulation.yaml:ro
       # Mount data directory for reading simulation results
@@ -195,6 +287,8 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
     networks:
       - opendt-network
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
@@ -234,5 +328,7 @@ networks:
 volumes:
   kafka_data:
     name: opendt-kafka-data
+  postgres_data:
+    name: opendt-postgres-data
   grafana-storage:
     name: opendt-grafana-storage

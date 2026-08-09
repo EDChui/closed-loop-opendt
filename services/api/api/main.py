@@ -4,13 +4,13 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from odt_common import load_config_from_env
+from odt_common.models import DecisionPolicy, MetricDirection, RankedDecisionPolicy, RankedObjectiveSpec
 from odt_common.models.topology import (
     CPU,
     Cluster,
@@ -22,14 +22,20 @@ from odt_common.models.topology import (
 )
 from odt_common.utils import get_kafka_producer
 from odt_common.utils.kafka import send_message
+from k8s_observability.persistence import build_engine, test_connection
 
+from api.applied_decision_query import AppliedDecisionQuery, AppliedDecisionResponse
 from api.carbon_query import CarbonDataQuery, CarbonDataResponse
+from api.utilization_query import UtilizationQuery, UtilizationResponse
+from api.machine_count_query import MachineCountQuery, MachineCountResponse
 from api.power_query import PowerDataQuery, PowerDataResponse
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+DEFAULT_DATABASE_URL = "postgresql+psycopg://opendt:opendt@postgres:5432/opendt"
 
 
 @asynccontextmanager
@@ -41,7 +47,7 @@ async def lifespan(app: FastAPI):
     # Load configuration
     try:
         app.state.config = load_config_from_env()
-        logger.info(f"Configuration loaded for workload: {app.state.config.workload}")
+        logger.info("Configuration loaded")
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")
         app.state.config = None
@@ -54,6 +60,19 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize Kafka producer: {e}")
         app.state.kafka_producer = None
 
+    # Initialize database engine
+    app.state.db_engine = None
+    database_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+    try:
+        app.state.db_engine = build_engine(database_url)
+        if test_connection(app.state.db_engine):
+            logger.info("Database engine initialized")
+        else:
+            logger.warning("Database engine initialized but connectivity check failed")
+    except Exception as exc:
+        logger.error("Failed to initialize database engine: %s", exc)
+        app.state.db_engine = None
+
     yield
 
     # Shutdown
@@ -61,6 +80,9 @@ async def lifespan(app: FastAPI):
     if app.state.kafka_producer:
         app.state.kafka_producer.close()
         logger.info("Kafka producer closed")
+    if app.state.db_engine:
+        app.state.db_engine.dispose()
+        logger.info("Database engine disposed")
 
 
 # Create FastAPI application
@@ -104,11 +126,13 @@ async def health_check():
     """Health check endpoint."""
     kafka_status = "connected" if app.state.kafka_producer else "disconnected"
     config_status = "loaded" if app.state.config else "not loaded"
+    database_status = "connected" if app.state.db_engine else "disconnected"
 
     return {
         "status": "healthy",
         "kafka": kafka_status,
         "config": config_status,
+        "database": database_status,
     }
 
 
@@ -145,8 +169,8 @@ DEFAULT_TOPOLOGY = Topology(
 # Example for OpenAPI docs
 DEFAULT_TOPOLOGY_EXAMPLE = DEFAULT_TOPOLOGY.model_dump(mode="json")
 
+@app.put("/api/topology", deprecated=True)
 
-@app.put("/api/topology")
 async def update_topology(
     topology: Annotated[
         Topology,
@@ -190,15 +214,15 @@ async def update_topology(
     # Topology already validated by Pydantic
     logger.info(f"Topology validated: {len(topology.clusters)} cluster(s)")
 
-    # Get sim.topology topic name from config
-    sim_topology_topic = app.state.config.kafka.topics.get("sim_topology")
-    if not sim_topology_topic:
-        logger.error("sim.topology topic not configured")
-        raise HTTPException(status_code=500, detail="sim.topology topic not configured")
+    # Get sim.calibration topic name from config
+    sim_calibration_topic = app.state.config.kafka.topics.get("sim_calibration")
+    if not sim_calibration_topic:
+        logger.error("sim.calibration topic not configured")
+        raise HTTPException(status_code=500, detail="sim.calibration topic not configured")
 
-    topic_name = sim_topology_topic.name
+    topic_name = sim_calibration_topic.name
 
-    # Publish to sim.topology Kafka topic with compacted key
+    # Publish to sim.calibration Kafka topic with compacted key
     try:
         send_message(
             producer=app.state.kafka_producer,
@@ -217,6 +241,75 @@ async def update_topology(
         "clusters": len(topology.clusters),
         "total_hosts": topology.total_host_count(),
         "total_cores": topology.total_core_count(),
+        "topic": topic_name,
+    }
+
+# ============================================================================
+# OBJECTIVE WEIGHT MANAGEMENT
+# ============================================================================
+
+DEFAULT_DECISION_POLICY = RankedDecisionPolicy(
+    policy_type="ranked",
+    objectives={
+        "runtime": RankedObjectiveSpec(name="runtime", direction=MetricDirection.MIN, priority=1, tie_tolerance=30.0),
+        "utilization": RankedObjectiveSpec(name="utilization", direction=MetricDirection.MAX, priority=2, tie_tolerance=0.05),
+        "power": RankedObjectiveSpec(name="power", direction=MetricDirection.MIN, priority=3, tie_tolerance=0.0),
+    }
+)
+
+DEFAULT_DECISION_POLICY_EXAMPLE = DEFAULT_DECISION_POLICY.model_dump(mode="json")
+
+@app.put("/api/objectives")
+async def update_objectives(
+    objectives: Annotated[
+        DecisionPolicy,
+        Body(
+            description="Objectives for decision making",
+            openapi_examples={
+                "default": {
+                    "summary": "Default objectives",
+                    "description": "Default weights: runtime=1, utilization=0",
+                    "value": DEFAULT_DECISION_POLICY_EXAMPLE,
+                }
+            },
+        ),
+    ] = DEFAULT_DECISION_POLICY,
+):
+    # Check if Kafka producer is available
+    if not app.state.kafka_producer:
+        logger.error("Kafka producer not initialized")
+        raise HTTPException(status_code=500, detail="Kafka producer not available")
+
+    # Check if config is loaded (to get topic name)
+    if not app.state.config:
+        logger.error("Configuration not loaded")
+        raise HTTPException(status_code=500, detail="Configuration not loaded")
+    
+    # Get dc.objectives topic name from config
+    objectives_topic = app.state.config.kafka.topics.get("objectives")
+    if not objectives_topic:
+        logger.error("dc.objectives topic not configured")
+        raise HTTPException(status_code=500, detail="dc.objectives topic not configured")
+
+    topic_name = objectives_topic.name
+
+    # Publish to dc.objectives Kafka topic with compacted key
+    try:
+        send_message(
+            producer=app.state.kafka_producer,
+            topic=topic_name,
+            message=objectives.model_dump(mode="json"),
+            key="objectives",
+        )
+        logger.info(f"Objectives published to {topic_name}")
+    except Exception as e:
+        logger.error(f"Failed to publish objectives to Kafka: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to publish objectives: {e}") from e
+    
+    return {
+        "status": "updated",
+        "message": f"Objective weights published to {topic_name}",
+        "objectives": objectives.model_dump(),
         "topic": topic_name,
     }
 
@@ -260,17 +353,12 @@ async def get_power_data(
     if not app.state.config:
         raise HTTPException(status_code=500, detail="Configuration not loaded")
 
+    if not app.state.db_engine:
+        raise HTTPException(status_code=500, detail="Database engine not available")
+
     try:
-        # Get workload directory (mounted directly to specific workload)
-        workload_dir = Path(os.getenv("WORKLOAD_DIR", "/app/workload"))
-
-        # Create workload context directly with mounted workload directory
-        from odt_common.config import WorkloadContext
-
-        workload_context = WorkloadContext(workload_dir=workload_dir)
-
         # Initialize query
-        query = PowerDataQuery(run_id=run_id, workload_context=workload_context)
+        query = PowerDataQuery(run_id=run_id, db_engine=app.state.db_engine)
 
         # Execute query
         result = query.query(interval_seconds=interval_seconds, start_time=start_time)
@@ -287,6 +375,127 @@ async def get_power_data(
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Error querying power data: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
+
+
+# ============================================================================
+# CPU UTILIZATION DATA QUERY
+# ============================================================================
+
+
+@app.get("/api/cpu_utilization", response_model=UtilizationResponse)
+async def get_cpu_utilization_data(
+    interval_seconds: int = Query(
+        60, gt=0, le=3600, description="Sampling interval in seconds (1-3600)"
+    ),
+    start_time: datetime | None = Query(None, description="Optional start time (ISO 8601 format)"),
+):
+    """Query aligned CPU utilization data from simulation and observations.
+
+    This endpoint compares:
+    - Simulated utilization from `agg_results.parquet`
+    - Actual node utilization from `node_utilization_snapshots`
+
+    Control-plane readings from `cloudcontrollerechui` are excluded from the
+    actual utilization aggregation because no jobs are dispatched there.
+    """
+    if not app.state.db_engine:
+        raise HTTPException(status_code=500, detail="Database engine not available")
+
+    run_id = os.getenv("RUN_ID")
+    if not run_id:
+        raise HTTPException(status_code=500, detail="RUN_ID environment variable not set")
+
+    try:
+        query = UtilizationQuery(run_id=run_id, db_engine=app.state.db_engine)
+        result = query.query(interval_seconds=interval_seconds, start_time=start_time)
+
+        logger.info(f"CPU utilization query successful: {result.metadata['count']} data points")
+        return result
+
+    except FileNotFoundError as e:
+        logger.error(f"Data file not found: {e}")
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        logger.error(f"Invalid data: {e}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"Error querying CPU utilization data: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
+
+
+# ============================================================================
+# MACHINE COUNT HISTORY QUERY
+# ============================================================================
+
+
+@app.get("/api/working_machines", response_model=MachineCountResponse)
+async def get_working_machine_history(
+    start_time: datetime | None = Query(None, description="Optional start time (ISO 8601 format)"),
+):
+    """Query working machine counts over time from observed state history.
+
+    The response includes the total number of working machines and one series per
+    `cluster/host` entry from the topology snapshots so heterogeneous setups can
+    be visualized without losing host-type detail.
+    """
+    run_id = os.getenv("RUN_ID")
+    if not run_id:
+        raise HTTPException(status_code=500, detail="RUN_ID environment variable not set")
+
+    try:
+        query = MachineCountQuery(run_id=run_id)
+        result = query.query(start_time=start_time)
+
+        logger.info(f"Working machine query successful: {result.metadata['count']} data points")
+        return result
+
+    except FileNotFoundError as e:
+        logger.error(f"Data file not found: {e}")
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        logger.error(f"Invalid data: {e}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"Error querying working machine history: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
+
+
+# ============================================================================
+# APPLIED DECISION HISTORY QUERY
+# ============================================================================
+
+
+@app.get("/api/applied_decisions", response_model=AppliedDecisionResponse)
+async def get_applied_decision_history(
+    start_time: datetime | None = Query(None, description="Optional start time (ISO 8601 format)"),
+    include_no_op: bool = Query(True, description="Whether to include no-op decisions"),
+):
+    """Query decision events over time from applied decision history.
+
+    The response is event-oriented instead of cumulative: each returned row
+    represents a decision timestamp and exposes one numeric series per action so
+    Grafana can visualize exactly when decisions occurred.
+    """
+    run_id = os.getenv("RUN_ID")
+    if not run_id:
+        raise HTTPException(status_code=500, detail="RUN_ID environment variable not set")
+
+    try:
+        query = AppliedDecisionQuery(run_id=run_id)
+        result = query.query(start_time=start_time, include_no_op=include_no_op)
+
+        logger.info(f"Applied decision query successful: {result.metadata['count']} data points")
+        return result
+
+    except FileNotFoundError as e:
+        logger.error(f"Data file not found: {e}")
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        logger.error(f"Invalid data: {e}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"Error querying applied decision history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}") from e
 
 

@@ -1,4 +1,4 @@
-.PHONY: up down clean-volumes help test setup clean-env lint
+.PHONY: up down export-api-metrics export-db clean-volumes help test setup clean-env lint
 
 # Default target
 .DEFAULT_GOAL := help
@@ -13,6 +13,14 @@ config ?= ./config/default.yaml
 # Build flag - set to 'true' to rebuild images without cache
 # Usage: make up build=true
 build ?= false
+
+# Database export flag - set to 'false' to skip export during shutdown
+# Usage: make down export_db=false
+export_db ?= true
+
+# API metrics export flag - set to 'false' to skip API snapshot during shutdown
+# Usage: make down export_metrics=false
+export_metrics ?= true
 
 # Virtual environment detection
 VENV := .venv
@@ -36,11 +44,13 @@ up: clean-volumes
 	fi
 	@$(PYTHON) scripts/opendt_cli.py init --config $(config)
 	@RUN_ID=$$(cat .run_id) && \
+	HOST_UID=$$(id -u) && HOST_GID=$$(id -g) && \
 	if [ ! -f "data/$$RUN_ID/.env" ]; then \
 		echo "Error: data/$$RUN_ID/.env not found after initialization"; \
 		exit 1; \
 	fi && \
 	set -a && . ./data/$$RUN_ID/.env && set +a && \
+	export HOST_UID HOST_GID && \
 	if [ "$(build)" = "true" ]; then \
 		echo "Rebuilding Docker images..."; \
 		docker compose $$PROFILE_FLAG build --no-cache; \
@@ -55,9 +65,21 @@ up: clean-volumes
 	@echo "View logs with: make logs-<service>"
 	@echo ""
 
-## down: Stop all containers
+## down: Export database to Parquet, then stop all containers
 down:
 	@echo ""
+	@if [ "$(export_db)" = "true" ]; then \
+		echo "Exporting PostgreSQL data to Parquet before shutdown..."; \
+		$(MAKE) export-db; \
+	else \
+		echo "Skipping PostgreSQL export (export_db=false)."; \
+	fi
+	@if [ "$(export_metrics)" = "true" ]; then \
+		echo "Exporting API metrics snapshot before shutdown..."; \
+		$(MAKE) export-api-metrics; \
+	else \
+		echo "Skipping API metrics export (export_metrics=false)."; \
+	fi
 	@echo "Stopping OpenDT services..."
 	@RUN_ID=$$(cat .run_id 2>/dev/null || true); \
 	if [ -n "$$RUN_ID" ] && [ -f "data/$$RUN_ID/.env" ]; then \
@@ -68,6 +90,42 @@ down:
 	@echo "Done."
 	@echo ""
 
+## export-api-metrics: Save API power and CPU utilization responses as separate JSON files
+export-api-metrics:
+	@RUN_ID=$$(cat .run_id 2>/dev/null || true); \
+	if [ -z "$$RUN_ID" ]; then \
+		echo "No .run_id found. Skipping API metrics export."; \
+		exit 0; \
+	fi; \
+	OUTPUT_DIR="data/$$RUN_ID/api"; \
+	mkdir -p "$$OUTPUT_DIR"; \
+	$(PYTHON) scripts/export_api_metrics.py --base-url http://localhost:3001 --interval-seconds 60 --output-dir "$$OUTPUT_DIR" --allow-partial
+
+## export-db: Save PostgreSQL public schema tables as Parquet files
+export-db:
+	@RUN_ID=$$(cat .run_id 2>/dev/null || true); \
+	if [ -z "$$RUN_ID" ]; then \
+		echo "No .run_id found. Skipping database export."; \
+		exit 0; \
+	fi; \
+	OUTPUT_DIR="data/$$RUN_ID/postgres"; \
+	mkdir -p "$$OUTPUT_DIR"; \
+	DB_URL="postgresql+psycopg://opendt:opendt@localhost:5433/opendt"; \
+	PROFILE_FLAG_VALUE=""; \
+	if [ -f "data/$$RUN_ID/.env" ]; then \
+		set -a; \
+		. ./data/$$RUN_ID/.env; \
+		set +a; \
+		DB_URL="$${DATABASE_URL:-$$DB_URL}"; \
+		PROFILE_FLAG_VALUE="$$PROFILE_FLAG"; \
+	fi; \
+	echo "Export directory: $$OUTPUT_DIR"; \
+	if ! docker compose $$PROFILE_FLAG_VALUE ps --status running --services | grep -qx "postgres"; then \
+		echo "Error: postgres container is not running, cannot export database."; \
+		exit 1; \
+	fi; \
+	$(PYTHON) scripts/export_db_to_parquet.py --run-id "$$RUN_ID" --database-url "$$DB_URL" --output-dir "$$OUTPUT_DIR"
+
 ## clean-volumes: Stop containers and delete all persistent volumes
 clean-volumes:
 	@RUN_ID=$$(cat .run_id 2>/dev/null || true); \
@@ -77,6 +135,7 @@ clean-volumes:
 		docker compose down -v 2>/dev/null || true; \
 	fi
 	@docker volume rm opendt-kafka-data 2>/dev/null || true
+	@docker volume rm opendt-postgres-data 2>/dev/null || true
 	@docker volume rm opendt-grafana-storage 2>/dev/null || true
 
 # =============================================================================
@@ -96,7 +155,9 @@ setup:
 	@echo "Installing dependencies..."
 	@uv pip install -e libs/common
 	@uv pip install -e "libs/common[test]"
+	@uv pip install -e libs/k8s-observability
 	@uv pip install -e ".[dev]"
+	@uv pip install -e ".[k8s-orchestrator]"
 	@echo ""
 	@echo "Done. Activate with: source .venv/bin/activate"
 	@echo ""
@@ -147,13 +208,33 @@ clean-env:
 # Logging Commands
 # =============================================================================
 
+## logs-kafka: Tail logs for kafka service
+logs-kafka:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f kafka
+
+## logs-kafka-init: Tail logs for kafka-init service
+logs-kafka-init:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f kafka-init
+
+## logs-postgres: Tail logs for postgres service
+logs-postgres:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f postgres
+
+## logs-postgres-init: Tail logs for postgres-init service
+logs-postgres-init:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f postgres-init
+
 ## logs-api: Tail logs for api service
 logs-api:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f api
 
-## logs-dc-mock: Tail logs for dc-mock service
-logs-dc-mock:
-	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f dc-mock
+## logs-k8s-observer: Tail logs for k8s-observer service
+logs-k8s-observer:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f k8s-observer
+
+## logs-k8s-orchestrator: Tail logs for k8s-orchestrator service
+logs-k8s-orchestrator:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose --profile k8s-orchestrator logs -f k8s-orchestrator
 
 ## logs-simulator: Tail logs for simulator service
 logs-simulator:
@@ -163,17 +244,41 @@ logs-simulator:
 logs-calibrator:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose --profile calibration logs -f calibrator
 
+## logs-grafana: Tail logs for grafana service
+logs-grafana:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose logs -f grafana
+
 # =============================================================================
 # Shell Commands
 # =============================================================================
+
+## shell-kafka: Open a shell in the kafka container
+shell-kafka:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec kafka /bin/bash
+
+## shell-kafka-init: Open a shell in the kafka-init container
+shell-kafka-init:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec kafka-init /bin/bash
+
+## shell-postgres: Open a shell in the postgres container
+shell-postgres:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec postgres /bin/bash
+
+## shell-postgres-init: Open a shell in the postgres-init container
+shell-postgres-init:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec postgres-init /bin/bash
 
 ## shell-api: Open a shell in the api container
 shell-api:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec api /bin/bash
 
-## shell-dc-mock: Open a shell in the dc-mock container
-shell-dc-mock:
-	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec dc-mock /bin/bash
+## shell-k8s-observer: Open a shell in the k8s-observer container
+shell-k8s-observer:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec k8s-observer /bin/bash
+
+## shell-k8s-orchestrator: Open a shell in the k8s-orchestrator container
+shell-k8s-orchestrator:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose --profile k8s-orchestrator exec k8s-orchestrator /bin/bash
 
 ## shell-simulator: Open a shell in the simulator container
 shell-simulator:
@@ -182,6 +287,10 @@ shell-simulator:
 ## shell-calibrator: Open a shell in the calibrator container
 shell-calibrator:
 	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose --profile calibration exec calibrator /bin/bash
+
+## shell-grafana: Open a shell in the grafana container
+shell-grafana:
+	@RUN_ID=$$(cat .run_id) && set -a && . ./data/$$RUN_ID/.env && set +a && docker compose exec grafana /bin/sh
 
 # =============================================================================
 # Help

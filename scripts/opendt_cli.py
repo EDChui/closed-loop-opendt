@@ -109,22 +109,12 @@ def init(
         calibration_enabled = config_data.get("global", {}).get("calibration_enabled", False)
         profile_flag = "--profile calibration" if calibration_enabled else ""
 
-        # Get workload name from config
-        workload_name = config_data.get("services", {}).get("dc-mock", {}).get("workload", "SURF")
-
-        # Validate workload directory exists
-        workload_dir = project_root / "workload" / workload_name
-        if not workload_dir.exists():
-            console.print(f"[red]Error:[/red] Workload directory not found: {workload_dir}")
-            raise typer.Exit(code=1)
-
     except typer.Exit:
         raise
     except Exception as e:
         console.print(f"[yellow]Warning:[/yellow] Could not read config: {e}")
         calibration_enabled = False
         profile_flag = ""
-        workload_name = "SURF"
 
     # Generate .env file in run directory
     config_path_relative = config_copy_path.relative_to(project_root)
@@ -135,8 +125,6 @@ RUN_ID={timestamp}
 CONFIG_PATH=./{config_path_relative}
 CALIBRATION_ENABLED={str(calibration_enabled).lower()}
 PROFILE_FLAG="{profile_flag}"
-WORKLOAD_NAME={workload_name}
-WORKLOAD_PATH=./workload/{workload_name}
 """
         run_env_file = data_dir / ".env"
         run_env_file.write_text(env_content)
@@ -151,7 +139,6 @@ WORKLOAD_PATH=./workload/{workload_name}
 
     table.add_row("Run ID", f"[bold]{timestamp}[/bold]")
     table.add_row("Config", str(config_path.relative_to(project_root)))
-    table.add_row("Workload", workload_name)
     table.add_row("Calibration", "enabled" if calibration_enabled else "disabled")
     table.add_row("Data dir", str(data_dir.relative_to(project_root)))
 

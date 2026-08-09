@@ -36,7 +36,9 @@ dev = [
 ]
 
 # Service-specific dependencies (optional, if some services have unique needs)
-dc-mock = []  # Currently uses only shared dependencies
+k8s-orchestrator = [
+   "aiokafka==0.13.0",
+]
 simulator = []  # Currently uses only shared dependencies
 api = [
     "httpx>=0.25.0",  # For API client usage
@@ -88,7 +90,7 @@ addopts = "-v --tb=short"
 
 [tool.pyright]
 include = ["libs", "services"]
-extraPaths = ["libs/common"]
+extraPaths = ["libs/common", "libs/k8s-observability"]
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "basic"

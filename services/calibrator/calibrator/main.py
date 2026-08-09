@@ -36,7 +36,7 @@ class CalibrationService:
         kafka_bootstrap_servers: str,
         workload_topic: str,
         topology_topic: str,
-        sim_topology_topic: str,
+        sim_calibration_topic: str,
         power_topic: str,
         calibrated_property: str,
         min_value: float,
@@ -89,7 +89,7 @@ class CalibrationService:
         self.topology_manager = TopologyManager(
             kafka_bootstrap_servers=kafka_bootstrap_servers,
             dc_topology_topic=topology_topic,
-            sim_topology_topic=sim_topology_topic,
+            sim_calibration_topic=sim_calibration_topic,
             consumer_group=f"{consumer_group}-topology",
         )
 
@@ -472,7 +472,7 @@ def main():
     """Main entry point."""
     try:
         config = load_config_from_env()
-        logger.info(f"Loaded configuration for workload: {config.workload}")
+        logger.info("Loaded configuration")
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")
         raise
@@ -491,7 +491,7 @@ def main():
     kafka_bootstrap_servers = get_kafka_bootstrap_servers()
     workload_topic = config.kafka.topics["workload"].name
     topology_topic = config.kafka.topics["topology"].name
-    sim_topology_topic = config.kafka.topics["sim_topology"].name
+    sim_calibration_topic = config.kafka.topics["sim_calibration"].name
     power_topic = config.kafka.topics["power"].name
 
     calibrator_config = config.services.calibrator
@@ -526,7 +526,7 @@ def main():
                 kafka_bootstrap_servers=kafka_bootstrap_servers,
                 workload_topic=workload_topic,
                 topology_topic=topology_topic,
-                sim_topology_topic=sim_topology_topic,
+                sim_calibration_topic=sim_calibration_topic,
                 power_topic=power_topic,
                 calibrated_property=calibrated_property,
                 min_value=min_value,

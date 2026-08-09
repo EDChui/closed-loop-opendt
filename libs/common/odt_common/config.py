@@ -7,7 +7,7 @@ This module provides:
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -36,9 +36,16 @@ class GlobalConfig(BaseModel):
     """Global configuration parameters."""
 
     speed_factor: float = Field(
-        default=10.0, description="Simulation speed: 1.0 = realtime, -1 = max speed, >1 = faster"
+        default=1.0, description="Simulation speed: 1.0 = realtime, -1 = max speed, >1 = faster"
     )
     calibration_enabled: bool = Field(default=False, description="Enable power model calibration")
+    cpu_frequency_mhz: int = Field(
+        default=2400, description="CPU frequency in MHz, assuming all nodes' cores have the same frequency", gt=0
+    )
+    namespace: str = Field(
+        default="default",
+        description="Target Kubernetes namespace to monitor",
+    )
 
     @field_validator("speed_factor")
     @classmethod
@@ -49,14 +56,58 @@ class GlobalConfig(BaseModel):
         return v
 
 
-class DcMockConfig(BaseModel):
-    """DC-Mock service configuration."""
+class ScaphandreSourceConfig(BaseModel):
+    name: str = Field(
+        ...,
+        description="Name of the physical node as identified by Scaphandre",
+    )
+    access_mode: Literal["local", "remote"] = Field(
+        default="local",
+        description="How Scaphandre is accessed: locally via /var/lib/libvirt/scaphandre or remotely via an HTTP endpoint",
+    )
+    url: str | None = Field(
+        default=None,
+        description="Remote Scaphandre endpoint URL. Required when access_mode='remote', ignored when access_mode='local'",
+    )
 
-    workload: str = Field(..., description="Workload name (e.g., 'SURF')")
+
+class K8sObserverConfig(BaseModel):
+    """K8s Observer service configuration."""
+
     heartbeat_frequency_minutes: int = Field(
         default=1,
-        description="Frequency in simulation minutes for workload heartbeat messages",
+        description="Interval in simulation minutes between workload heartbeat messages",
         gt=0,
+    )
+    resource_collection_interval_seconds: int = Field(
+        default=15,
+        description="Interval in seconds between Prometheus resource usage collections",
+        gt=0,
+    )
+    node_power_collection_interval_seconds: int = Field(
+        default=15,
+        description="Interval in seconds between node power readings",
+        gt=0,
+    )
+    scaphandre_sources: list[ScaphandreSourceConfig] = Field(
+        default_factory=list,
+        description="Configured Scaphandre sources for collecting node power readings",
+    )
+
+
+class K8sOrchestratorConfig(BaseModel):
+    """K8s-Orchestrator service configuration."""
+
+    refresh_interval_seconds: int = Field(
+        default=120, description="Interval in seconds to fetch real system status", gt=0
+    )
+    backlog_refresh_interval_seconds: int = Field(
+        default=60, description="Interval in seconds to refresh backlog status", gt=0
+    )
+    backlog_threshold: int = Field(
+        default=10,
+        description="Threshold for number of pending pods/jobs to trigger scaling actions",
+        ge=0,
     )
 
 
@@ -66,10 +117,8 @@ class SimulatorConfig(BaseModel):
     simulation_frequency_minutes: int = Field(
         default=15, description="Simulation frequency in minutes (simulated time)", gt=0
     )
-    background_load_nodes: int = Field(
-        ...,
-        description="Number of nodes reserved for background load (not available for simulation)",
-        ge=0,
+    max_parallel_workers: int = Field(
+        default=4, description="Maximum number of parallel OpenDC simulations", gt=0
     )
 
 
@@ -116,7 +165,8 @@ class CalibratorConfig(BaseModel):
 class ServicesConfig(BaseModel):
     """Configuration for all services."""
 
-    dc_mock: DcMockConfig = Field(alias="dc-mock")
+    k8s_observer: K8sObserverConfig = Field(alias="k8s-observer")
+    k8s_orchestrator: K8sOrchestratorConfig = Field(alias="k8s-orchestrator")
     simulator: SimulatorConfig
     calibrator: CalibratorConfig | None = Field(
         None, description="Calibrator config (only required if calibration_enabled=true)"
@@ -126,104 +176,19 @@ class ServicesConfig(BaseModel):
         populate_by_name = True
 
 
-class WorkloadMetadata(BaseModel):
-    """Workload-specific metadata and configuration."""
+class K8sWorkloadContext(BaseModel):
+    """Kubernetes-specific workload context"""
 
-    name: str = Field(..., description="Workload name")
-    description: str | None = Field(default=None, description="Workload description")
-    consumption_offset_ms: int = Field(
-        default=0, description="Offset in ms to add to consumption timestamps"
+    kubeconfig_path: str = Field(default="/kube/config", description="Path to kubeconfig file")
+    namespace: str = Field(default="default", description="Kubernetes namespace to monitor")
+    resource_type: Literal["pod", "job"] = Field(default="pod", description="Kubernetes resource type to monitor (pod, job)")
+    prometheus_url: str = Field(default="http://host.docker.internal:9090", description="URL for Prometheus server to query resource metrics")
+    scaphandre_base_path: str = Field(default="/hostfs/var/lib/libvirt/scaphandre", description="Base path for Scaphandre energy readings on host filesystem")
+    scaphandre_sources: list[ScaphandreSourceConfig] = Field(
+        default_factory=list,
+        description="List of Scaphandre sources for collecting node power readings related to this workload",
     )
-
-    @classmethod
-    def load(cls, path: Path) -> "WorkloadMetadata":
-        """Load workload metadata from YAML file."""
-        if not path.exists():
-            # Return default if file doesn't exist
-            return cls(name=path.parent.name)
-
-        with open(path) as f:
-            data = yaml.safe_load(f)
-
-        # Extract relevant fields
-        timestamps = data.get("timestamps", {})
-        return cls(
-            name=data.get("name", path.parent.name),
-            description=data.get("description"),
-            consumption_offset_ms=timestamps.get("consumption_offset_ms", 0),
-        )
-
-
-class WorkloadContext(BaseModel):
-    """Workload context with resolved file paths."""
-
-    name: str = Field(default="", description="Workload name (e.g., 'SURF')")
-    base_path: Path = Field(default=Path("/app/workload"), description="Base workload directory")
-    workload_dir: Path | None = Field(
-        None, description="Direct path to workload directory (overrides base_path/name)"
-    )
-    metadata: WorkloadMetadata | None = Field(None, description="Workload metadata")
-
-    def __init__(self, **data):
-        """Initialize and load metadata if not provided."""
-        super().__init__(**data)
-        if self.metadata is None and self.workload_config_file.exists():
-            self.metadata = WorkloadMetadata.load(self.workload_config_file)
-
-    @property
-    def _resolved_workload_dir(self) -> Path:
-        """Get resolved workload directory path."""
-        if self.workload_dir is not None:
-            return self.workload_dir
-        return self.base_path / self.name
-
-    @property
-    def tasks_file(self) -> Path:
-        """Path to tasks.parquet file."""
-        return self._resolved_workload_dir / "tasks.parquet"
-
-    @property
-    def fragments_file(self) -> Path:
-        """Path to fragments.parquet file."""
-        return self._resolved_workload_dir / "fragments.parquet"
-
-    @property
-    def consumption_file(self) -> Path:
-        """Path to consumption.parquet file."""
-        return self._resolved_workload_dir / "consumption.parquet"
-
-    @property
-    def topology_file(self) -> Path:
-        """Path to topology.json file."""
-        return self._resolved_workload_dir / "topology.json"
-
-    @property
-    def workload_config_file(self) -> Path:
-        """Path to workload configuration file."""
-        return self._resolved_workload_dir / "workload.yaml"
-
-    @property
-    def consumption_offset_ms(self) -> int:
-        """Get consumption timestamp offset in milliseconds."""
-        if self.metadata:
-            return self.metadata.consumption_offset_ms
-        return 0
-
-    def exists(self) -> bool:
-        """Check if workload directory exists."""
-        return self._resolved_workload_dir.exists()
-
-    def get_file_status(self) -> dict[str, bool]:
-        """Check which workload files exist."""
-        return {
-            "tasks": self.tasks_file.exists(),
-            "fragments": self.fragments_file.exists(),
-            "consumption": self.consumption_file.exists(),
-            "topology": self.topology_file.exists(),
-        }
-
-    class Config:
-        arbitrary_types_allowed = True
+    database_url: str = Field(default="postgresql+psycopg://opendt:opendt@postgres:5432/opendt", description="Database connection URL for storing workload metadata")
 
 
 class AppConfig(BaseModel):
@@ -248,25 +213,9 @@ class AppConfig(BaseModel):
         return self
 
     @property
-    def workload(self) -> str:
-        """Get workload name from dc-mock config."""
-        return self.services.dc_mock.workload
-
-    @property
     def calibration_enabled(self) -> bool:
         """Check if calibration is enabled."""
         return self.global_config.calibration_enabled
-
-    def get_workload_context(self, base_path: Path) -> WorkloadContext:
-        """Get workload context with resolved paths.
-
-        Args:
-            base_path: Override the default base path (/app/data)
-
-        Returns:
-            WorkloadContext with resolved file paths
-        """
-        return WorkloadContext(name=self.workload, base_path=base_path)
 
     @classmethod
     def load(cls, path: str | Path) -> "AppConfig":
